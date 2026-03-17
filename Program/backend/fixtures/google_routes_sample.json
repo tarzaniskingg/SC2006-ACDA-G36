@@ -1,0 +1,53 @@
+[
+  {
+    "requested_mode": "transit",
+    "legs": [
+      {
+        "start_address": "Origin",
+        "end_address": "Destination",
+        "duration": {"value": 1800},
+        "distance": {"value": 12000},
+        "steps": [
+          {"travel_mode": "WALKING", "duration": {"value": 300}},
+          {
+            "travel_mode": "TRANSIT",
+            "transit_details": {
+              "departure_stop": {"name": "Jurong East Stn"},
+              "arrival_stop": {"name": "Clementi Stn"},
+              "line": {
+                "vehicle": {"type": "SUBWAY"},
+                "short_name": "EW"
+              }
+            }
+          },
+          {
+            "travel_mode": "TRANSIT",
+            "transit_details": {
+              "departure_stop": {"name": "Clementi Int"},
+              "arrival_stop": {"name": "Opp Somerset Stn"},
+              "line": {
+                "vehicle": {"type": "BUS"},
+                "short_name": "7"
+              }
+            }
+          },
+          {"travel_mode": "WALKING", "duration": {"value": 240}}
+        ]
+      }
+    ]
+  },
+  {
+    "requested_mode": "driving",
+    "legs": [
+      {
+        "start_address": "Origin",
+        "end_address": "Destination",
+        "duration": {"value": 1200},
+        "distance": {"value": 10000},
+        "steps": [
+          {"travel_mode": "DRIVING", "duration": {"value": 1200}}
+        ]
+      }
+    ]
+  }
+]
