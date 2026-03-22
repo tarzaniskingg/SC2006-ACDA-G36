@@ -1,9 +1,9 @@
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException
-from typing import Optional
+from typing import Optional, List
 from ..models.schemas import (
     TripRequest,
     RoutesResponse,
@@ -11,14 +11,21 @@ from ..models.schemas import (
     DatasetsStatusResponse,
     Settings,
     AssessmentInput,
+    CompareSlot,
+    CompareResponse,
+    CrowdingHeatmapResponse,
+    CrowdingInterval,
 )
 from ..services.caching import global_cache
 from ..models.schemas import DatasetStatus
-from ..services.routing import rank_routes, add_explanations
+from ..services.routing import rank_routes, add_explanations, compute_realistic_time
 from ..services.scoring import RISK_NUMERIC
 from ..services.assessment import assess_segments_from_google_route
 from ..services.routing import aggregate_route_risks, build_route_steps, estimate_cost
 from ..clients.google import get_directions
+from ..clients import lta as lta_client
+from ..services.weather import get_weather_for_route
+from ..services.erp import calculate_erp
 
 
 router = APIRouter()
@@ -85,6 +92,14 @@ def get_routes(
     if not modes:
         modes = ["transit", "driving"]
 
+    # Parse departure_time into datetime for time-aware assessment (Step 0)
+    dt: Optional[datetime] = None
+    if departure_time:
+        try:
+            dt = datetime.fromisoformat(departure_time.replace("Z", "+00:00"))
+        except Exception:
+            pass  # leave as None; assessment will use current time
+
     raw_routes = get_directions(origin, destination, modes=modes, departure_time=departure_time, alternatives=True)
     candidates = []
     for r in raw_routes:
@@ -96,17 +111,21 @@ def get_routes(
         distance_m = (leg.get("distance") or {}).get("value", 0)
         mode = r.get("requested_mode", "transit")
 
-        # Assess segments
-        segs = assess_segments_from_google_route(r)
+        # Assess segments (now returns bus frequencies too)
+        segs, bus_freqs = assess_segments_from_google_route(r, departure_time=dt)
         crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
 
-        # Build rich step-by-step breakdown
-        route_steps, path_summary, transfers = build_route_steps(r, segs)
+        # Build rich step-by-step breakdown (pass bus_freqs)
+        route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
 
         cost_info = estimate_cost(distance_m, duration_s, "driving" if mode == "driving" else "transit")
 
         # Compute walking minutes from steps
         walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
+
+        # Compute realistic time (Feature 5)
+        time_min = round(duration_s / 60.0, 1)
+        realistic_time_min = compute_realistic_time(time_min, route_steps)
 
         # Extract overview polyline from Google response if available
         overview_polyline = None
@@ -115,10 +134,33 @@ def get_routes(
         except Exception:
             pass
 
+        # Feature 3: ERP for driving routes
+        erp_data = None
+        if mode == "driving" and overview_polyline:
+            erp_data = calculate_erp(overview_polyline, departure_time=dt)
+            if erp_data:
+                cost_info["erp"] = erp_data["total"]
+                cost_info["erp_gantries"] = erp_data["gantries"]
+                cost_info["total"] = round(cost_info["total"] + erp_data["total"], 2)
+
+        # Feature 2: Weather for all routes
+        weather_data = None
+        try:
+            start_loc = leg.get("start_location") or {}
+            end_loc = leg.get("end_location") or {}
+            if start_loc.get("lat") and end_loc.get("lat"):
+                weather_data = get_weather_for_route(
+                    start_loc["lat"], start_loc["lng"],
+                    end_loc["lat"], end_loc["lng"],
+                )
+        except Exception:
+            pass
+
         candidates.append({
             "category": "Taxi/Private Hire" if mode == "driving" else "Public Transit",
             "path_summary": path_summary or ("Drive" if mode == "driving" else ""),
-            "time_min": round(duration_s / 60.0, 1),
+            "time_min": time_min,
+            "realistic_time_min": realistic_time_min,
             "cost_est": cost_info["total"],
             "cost_breakdown": cost_info,
             "distance_km": round(distance_m / 1000.0, 2),
@@ -132,6 +174,8 @@ def get_routes(
             "risk_delay_num": delay_num,
             "risk_cat": max(crowd_cat.value, delay_cat.value, key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
             "uses_fallback": uses_fallback,
+            "weather": weather_data,
+            "erp": erp_data,
         })
 
     # Deduplicate routes that use the same sequence of modes + stops
@@ -184,20 +228,24 @@ def get_assessment(
     departure_time: Optional[str] = None,
 ):
     trip = TripRequest(origin=origin, destination=destination, departure_time=departure_time)
-    # Prefer transit for segment-level assessment; fall back to driving if needed
+    dt = None
+    if departure_time:
+        try:
+            dt = datetime.fromisoformat(departure_time.replace("Z", "+00:00"))
+        except Exception:
+            pass
     routes = get_directions(origin, destination, modes=["transit"], departure_time=departure_time, alternatives=False)
     if not routes:
         routes = get_directions(origin, destination, modes=["driving"], departure_time=departure_time, alternatives=False)
     if not routes:
         return AssessmentResponse(trip=trip, segments=[], message="No routes found or API unavailable")
-    segs = assess_segments_from_google_route(routes[0])
+    segs, _ = assess_segments_from_google_route(routes[0], departure_time=dt)
     return AssessmentResponse(trip=trip, segments=segs)
 
 
 @router.post("/assessment", response_model=AssessmentResponse)
 def post_assessment(body: AssessmentInput):
-    segs = assess_segments_from_google_route(body.route)
-    # Trip fields are unknown here; return placeholders
+    segs, _ = assess_segments_from_google_route(body.route)
     trip = TripRequest(origin="", destination="")
     return AssessmentResponse(trip=trip, segments=segs)
 
@@ -266,6 +314,152 @@ def refresh_datasets():
             source=s["source"],
         )
     return DatasetsStatusResponse(sources=sources)
+
+
+# ---------------------------------------------------------------------------
+# Feature 1: Departure Time Comparison
+# ---------------------------------------------------------------------------
+
+@router.get("/routes/compare", response_model=CompareResponse)
+def compare_departure_times(
+    origin: str,
+    destination: str,
+    times: str = "07:00,07:30,08:00,08:30,09:00",
+    include_transit: Optional[bool] = None,
+    include_driving: Optional[bool] = None,
+    wt_time: float = 0.25,
+    wt_cost: float = 0.25,
+    wt_risk: float = 0.25,
+    wt_comfort: float = 0.25,
+):
+    """Compare routes across multiple departure times."""
+    from datetime import date as date_type
+    time_slots = [t.strip() for t in times.split(",") if t.strip()]
+    weights = {"time": wt_time, "cost": wt_cost, "risk": wt_risk, "comfort": wt_comfort}
+
+    if include_transit is not None or include_driving is not None:
+        modes = []
+        if include_transit is not False:
+            modes.append("transit")
+        if include_driving is not False:
+            modes.append("driving")
+    else:
+        modes = ["transit", "driving"]
+
+    slots: List[CompareSlot] = []
+    today = date_type.today()
+
+    for time_str in time_slots:
+        try:
+            h, m = map(int, time_str.split(":"))
+            slot_dt = datetime(today.year, today.month, today.day, h, m,
+                               tzinfo=timezone(timedelta(hours=8)))
+            dep_str = slot_dt.isoformat()
+        except Exception:
+            continue
+
+        raw_routes = get_directions(origin, destination, modes=modes,
+                                     departure_time=dep_str, alternatives=True)
+        candidates = []
+        for r in raw_routes:
+            legs = r.get("legs", [])
+            if not legs:
+                continue
+            leg = legs[0]
+            duration_s = (leg.get("duration") or {}).get("value", 0)
+            distance_m = (leg.get("distance") or {}).get("value", 0)
+            rmode = r.get("requested_mode", "transit")
+
+            segs, bus_freqs = assess_segments_from_google_route(r, departure_time=slot_dt)
+            crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
+            route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
+            cost_info = estimate_cost(distance_m, duration_s, "driving" if rmode == "driving" else "transit")
+            walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
+            time_min = round(duration_s / 60.0, 1)
+            realistic_time_min = compute_realistic_time(time_min, route_steps)
+
+            candidates.append({
+                "category": "Taxi/Private Hire" if rmode == "driving" else "Public Transit",
+                "path_summary": path_summary or ("Drive" if rmode == "driving" else ""),
+                "time_min": time_min,
+                "realistic_time_min": realistic_time_min,
+                "cost_est": cost_info["total"],
+                "cost_breakdown": cost_info,
+                "distance_km": round(distance_m / 1000.0, 2),
+                "walk_min": round(walk_min, 1),
+                "transfers": transfers if rmode != "driving" else 0,
+                "steps": [s.model_dump() for s in route_steps],
+                "risk_crowding_cat": crowd_cat.value,
+                "risk_crowding_num": crowd_num,
+                "risk_delay_cat": delay_cat.value,
+                "risk_delay_num": delay_num,
+                "risk_cat": max(crowd_cat.value, delay_cat.value,
+                                key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
+                "uses_fallback": uses_fallback,
+            })
+
+        if candidates:
+            ranked = rank_routes(candidates, weights)
+            add_explanations(ranked, weights)
+            top = ranked[:3]
+        else:
+            top = []
+
+        best_score = top[0]["score"] if top else None
+        slots.append(CompareSlot(time=time_str, routes=top, best_score=best_score))
+
+    return CompareResponse(origin=origin, destination=destination, slots=slots)
+
+
+# ---------------------------------------------------------------------------
+# Feature 4: Crowding Heatmap
+# ---------------------------------------------------------------------------
+
+@router.get("/crowding/heatmap", response_model=CrowdingHeatmapResponse)
+def crowding_heatmap(station_name: str, line: Optional[str] = None):
+    """
+    Return all PCD intervals for a station, for heatmap display.
+    Accepts a human-readable station name (e.g. "Jurong East") and
+    resolves it to the station code and line internally.
+    """
+    from ..services.assessment import _lookup_station
+
+    lookup = _lookup_station(station_name)
+    if not lookup:
+        return CrowdingHeatmapResponse(station=station_name, line=line or "", intervals=[])
+
+    station_code, train_line = lookup
+    # Allow caller to override line if needed
+    train_line = line or train_line
+
+    pcd, ts, was_fallback = lta_client.get_pcd_forecast(train_line=train_line)
+    intervals_out: List[CrowdingInterval] = []
+
+    try:
+        values = pcd.get("value") or []
+        if values and values[0] is not None:
+            stations_data = values[0].get("Stations") or []
+            for st in stations_data:
+                if st.get("Station") == station_code:
+                    for iv in (st.get("Interval") or []):
+                        level_raw = (iv.get("CrowdLevel") or "").strip().lower()
+                        if level_raw in ("l", "low"):
+                            level = "Low"
+                        elif level_raw in ("m", "moderate", "medium", "mod"):
+                            level = "Medium"
+                        elif level_raw in ("h", "high"):
+                            level = "High"
+                        else:
+                            level = "Unknown"
+                        intervals_out.append(CrowdingInterval(
+                            start=iv.get("Start", ""),
+                            crowd_level=level,
+                        ))
+                    break
+    except Exception:
+        pass
+
+    return CrowdingHeatmapResponse(station=station_name, line=train_line, intervals=intervals_out)
 
 
 # --- Minimal Google Maps passthrough (no fallbacks) ---

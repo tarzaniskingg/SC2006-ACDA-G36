@@ -42,6 +42,8 @@ class RouteStep(BaseModel):
     # Per-step risk (None for walking steps)
     crowding: Optional[RiskIndicator] = None
     delay: Optional[RiskIndicator] = None
+    # Bus frequency data (Feature 5)
+    bus_frequency: Optional[Dict] = None
 
 
 class TripRequest(BaseModel):
@@ -93,6 +95,12 @@ class RouteOption(BaseModel):
     score: float = 0.0
     uses_fallback: bool = False
     explanation: str = ""
+    # Feature 5: Realistic time accounting for bus frequency risk
+    realistic_time_min: Optional[float] = None
+    # Feature 2: Weather data
+    weather: Optional[Dict] = None
+    # Feature 3: ERP cost data
+    erp: Optional[Dict] = None
 
 
 class AssessmentResponse(BaseModel):
@@ -129,3 +137,28 @@ class Settings(BaseModel):
     default_wt_cost: float = 0.25
     default_wt_risk: float = 0.25
     default_wt_comfort: float = 0.25
+
+
+# Feature 1: Departure time comparison
+class CompareSlot(BaseModel):
+    time: str
+    routes: List[RouteOption] = []
+    best_score: Optional[float] = None
+
+
+class CompareResponse(BaseModel):
+    origin: str
+    destination: str
+    slots: List[CompareSlot] = []
+
+
+# Feature 4: Crowding heatmap
+class CrowdingInterval(BaseModel):
+    start: str
+    crowd_level: str
+
+
+class CrowdingHeatmapResponse(BaseModel):
+    station: str
+    line: str
+    intervals: List[CrowdingInterval] = []

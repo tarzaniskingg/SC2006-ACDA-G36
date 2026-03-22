@@ -66,6 +66,39 @@ export function formatCost(cost) {
   return `$${cost.toFixed(2)}`;
 }
 
+// Bus frequency risk color (Feature 5)
+export function frequencyBadgeClass(cat) {
+  switch (cat) {
+    case 'High': return 'bg-emerald-100 text-emerald-700';   // High freq = good
+    case 'Medium': return 'bg-amber-100 text-amber-700';
+    case 'Low': return 'bg-red-100 text-red-700';            // Low freq = bad
+    default: return 'bg-slate-100 text-slate-500';
+  }
+}
+
+export function frequencyLabel(freq) {
+  if (!freq) return null;
+  const min = freq.frequency_min;
+  if (min <= 8) return `Every ${min} min`;
+  if (min <= 15) return `Every ${min} min`;
+  return `Every ${min} min`;
+}
+
+// Weather helpers (Feature 2)
+export function isRainy(weather) {
+  return weather?.rain === true;
+}
+
+// Crowding heatmap color (Feature 4)
+export function crowdColor(level) {
+  switch (level) {
+    case 'Low': return '#10b981';     // emerald
+    case 'Medium': return '#f59e0b';  // amber
+    case 'High': return '#ef4444';    // red
+    default: return '#94a3b8';        // slate
+  }
+}
+
 export function decodePolyline(encoded) {
   if (!encoded) return [];
   const points = [];

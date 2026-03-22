@@ -232,7 +232,7 @@ def _bus_crowding_for_stop_and_service(stop_name: str, service_no: str, lat: Opt
 # MRT crowding — uses PCDForecast with TrainLine param + station code matching
 # ---------------------------------------------------------------------------
 
-def _mrt_crowding_for_station(station_name: str) -> Tuple[RiskIndicator, Dict]:
+def _mrt_crowding_for_station(station_name: str, query_time: Optional[datetime] = None) -> Tuple[RiskIndicator, Dict]:
     lookup = _lookup_station(station_name)
     if not lookup:
         return make_risk("Unknown", source="none"), {}
@@ -257,8 +257,8 @@ def _mrt_crowding_for_station(station_name: str) -> Tuple[RiskIndicator, Dict]:
                 if not intervals:
                     break
 
-                # Find the interval matching the current time
-                now = datetime.now(timezone(timedelta(hours=8)))  # SGT
+                # Find the interval matching the query time (or current time)
+                now = query_time or datetime.now(timezone(timedelta(hours=8)))  # SGT
                 best_interval = intervals[0]  # default to first
                 for iv in intervals:
                     try:
@@ -335,6 +335,68 @@ def _train_delay_for_segment(station_name: str) -> RiskIndicator:
 
 
 # ---------------------------------------------------------------------------
+# Bus frequency risk — uses BusArrival next-bus gaps
+# ---------------------------------------------------------------------------
+
+def _bus_frequency_for_stop_and_service(
+    stop_name: str, service_no: str,
+    lat: Optional[float] = None, lng: Optional[float] = None,
+) -> Optional[Dict]:
+    """
+    Return bus frequency data for a specific service at a stop.
+    Uses the gap between NextBus and NextBus2 to estimate headway.
+    """
+    stop_code = _lookup_bus_stop_code(stop_name, lat, lng)
+    if not stop_code:
+        return None
+
+    data, ts, was_fallback = lta_client.get_bus_arrival(stop_code)
+    try:
+        services = data.get("Services") or []
+        svc_data = None
+        for svc in services:
+            if str(svc.get("ServiceNo", "")).strip() == service_no.strip():
+                svc_data = svc
+                break
+        if not svc_data:
+            return None
+
+        next1_str = (svc_data.get("NextBus") or {}).get("EstimatedArrival", "")
+        next2_str = (svc_data.get("NextBus2") or {}).get("EstimatedArrival", "")
+
+        if not next1_str or not next2_str:
+            return None
+
+        next1 = datetime.fromisoformat(next1_str)
+        next2 = datetime.fromisoformat(next2_str)
+        frequency_min = max(1, round((next2 - next1).total_seconds() / 60))
+
+        # Classify frequency
+        if frequency_min <= 8:
+            frequency_cat = "High"     # High frequency = Low risk
+        elif frequency_min <= 15:
+            frequency_cat = "Medium"
+        else:
+            frequency_cat = "Low"      # Low frequency = High risk
+
+        # miss_penalty_min = frequency (you wait a full cycle if you miss it)
+        miss_penalty_min = frequency_min
+
+        # Time until next arrival from now
+        now = datetime.now(timezone(timedelta(hours=8)))
+        mins_to_next = max(0, round((next1 - now).total_seconds() / 60))
+
+        return {
+            "frequency_min": frequency_min,
+            "frequency_cat": frequency_cat,
+            "next_arrival_min": mins_to_next,
+            "miss_penalty_min": miss_penalty_min,
+        }
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Driving delay — uses TrafficSpeedBands
 # ---------------------------------------------------------------------------
 
@@ -385,8 +447,14 @@ def _delay_risk_for_driving_segment(start_lat: Optional[float], start_lng: Optio
 # Main assessment: parse Google route into assessed segments
 # ---------------------------------------------------------------------------
 
-def assess_segments_from_google_route(route: Dict) -> List[SegmentAssessment]:
+def assess_segments_from_google_route(route: Dict, departure_time: Optional[datetime] = None) -> Tuple[List[SegmentAssessment], List[Optional[Dict]]]:
+    """
+    Assess segments from a Google route.
+    Returns (segments, bus_frequencies) where bus_frequencies is a parallel list
+    with frequency dicts for bus steps and None for others.
+    """
     segments: List[SegmentAssessment] = []
+    bus_frequencies: List[Optional[Dict]] = []
     mode = route.get("requested_mode")
 
     if mode == "driving":
@@ -403,12 +471,13 @@ def assess_segments_from_google_route(route: Dict) -> List[SegmentAssessment]:
         segments.append(
             SegmentAssessment(mode="DRIVING", from_name=start_addr, to_name=end_addr, crowding=crowd, delay=delay)
         )
-        return segments
+        bus_frequencies.append(None)
+        return segments, bus_frequencies
 
     try:
         steps = route["legs"][0]["steps"]
     except Exception:
-        return segments
+        return segments, bus_frequencies
 
     for step in steps:
         if step.get("travel_mode") != "TRANSIT":
@@ -426,11 +495,13 @@ def assess_segments_from_google_route(route: Dict) -> List[SegmentAssessment]:
         line = details.get("line", {})
         service_no = line.get("short_name") or line.get("name") or ""
 
+        freq_data = None
         if vehicle == "BUS":
             crowd, _ = _bus_crowding_for_stop_and_service(dep_name, service_no, dep_lat, dep_lng)
-            delay = make_risk("Low", source="default")  # Buses don't have a good delay source
+            delay = make_risk("Low", source="default")
+            freq_data = _bus_frequency_for_stop_and_service(dep_name, service_no, dep_lat, dep_lng)
         elif vehicle in ("SUBWAY", "HEAVY_RAIL", "RAIL"):
-            crowd, _ = _mrt_crowding_for_station(dep_name)
+            crowd, _ = _mrt_crowding_for_station(dep_name, query_time=departure_time)
             delay = _train_delay_for_segment(dep_name)
         else:
             crowd = make_risk("Unknown")
@@ -444,5 +515,6 @@ def assess_segments_from_google_route(route: Dict) -> List[SegmentAssessment]:
             delay=delay,
         )
         segments.append(seg)
+        bus_frequencies.append(freq_data)
 
-    return segments
+    return segments, bus_frequencies

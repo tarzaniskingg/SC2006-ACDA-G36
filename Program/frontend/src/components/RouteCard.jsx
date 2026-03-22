@@ -1,7 +1,7 @@
-import { Clock, DollarSign, Users, AlertTriangle, ChevronDown, ChevronUp, Footprints, Bus, TrainFront, Car, Ship, BarChart3, Receipt } from 'lucide-react';
+import { Clock, DollarSign, Users, AlertTriangle, ChevronDown, ChevronUp, Footprints, Bus, TrainFront, Car, Ship, BarChart3, Receipt, CloudRain, Timer } from 'lucide-react';
 import { useState } from 'react';
 import RiskBadge from './RiskBadge';
-import { formatDuration, formatCost, modeColor } from '../utils/helpers';
+import { formatDuration, formatCost, modeColor, frequencyBadgeClass, isRainy } from '../utils/helpers';
 
 const modeIcons = {
   Walk: Footprints,
@@ -97,7 +97,12 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
       <div className="grid grid-cols-4 gap-2 mb-3">
         <div className="flex items-center gap-1.5">
           <Clock size={14} className="text-slate-400" />
-          <span className="text-sm font-semibold">{formatDuration(route.time_min)}</span>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold">{formatDuration(route.time_min)}</span>
+            {route.realistic_time_min != null && route.realistic_time_min > route.time_min && (
+              <span className="text-[10px] text-amber-600 font-medium">~{formatDuration(route.realistic_time_min)}</span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <DollarSign size={14} className="text-slate-400" />
@@ -112,6 +117,26 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
           <RiskBadge category={route.risk_delay_cat} />
         </div>
       </div>
+
+      {/* Weather badge (Feature 2) */}
+      {isRainy(route.weather) && (
+        <div className="flex items-center gap-1.5 mb-2 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5">
+          <CloudRain size={14} className="text-blue-500" />
+          <span className="text-xs text-blue-700 font-medium">Rain expected along route — allow extra time for walking segments</span>
+        </div>
+      )}
+
+      {/* Bus frequency warnings (Feature 5) */}
+      {route.steps?.some(s => s.bus_frequency && s.bus_frequency.frequency_cat === 'Low') && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mb-2">
+          {route.steps.filter(s => s.bus_frequency && s.bus_frequency.frequency_cat === 'Low').map((s, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-xs text-amber-700">
+              <Timer size={12} className="shrink-0" />
+              <span>Bus {s.line_name} runs every {s.bus_frequency.frequency_min} min. Missing it adds ~{s.bus_frequency.miss_penalty_min} min.</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Explanation */}
       {route.explanation && (
@@ -167,10 +192,20 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
                     {step.departure_time && (
                       <span className="text-xs text-slate-400">Depart: {step.departure_time}</span>
                     )}
-                    {(step.crowding || step.delay) && (
-                      <div className="flex gap-2 mt-1">
+                    {(step.crowding || step.delay || step.bus_frequency) && (
+                      <div className="flex gap-2 mt-1 flex-wrap">
                         {step.crowding && <RiskBadge category={step.crowding.category} label="crowd" />}
                         {step.delay && <RiskBadge category={step.delay.category} label="delay" />}
+                        {step.bus_frequency && (
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${frequencyBadgeClass(step.bus_frequency.frequency_cat)}`}>
+                            Every {step.bus_frequency.frequency_min} min
+                          </span>
+                        )}
+                        {step.bus_frequency?.next_arrival_min != null && (
+                          <span className="text-[10px] text-sky-600 font-medium">
+                            Next: {step.bus_frequency.next_arrival_min} min
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -232,6 +267,20 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
                       <span className="text-slate-500">Waiting / slow traffic</span>
                       <span className="font-mono text-slate-700">${cb.waiting_charge?.toFixed(2)}</span>
                     </div>
+                    {cb.erp != null && cb.erp > 0 && (
+                      <>
+                        <div className="flex justify-between text-xs text-orange-600 font-medium">
+                          <span>ERP charges</span>
+                          <span className="font-mono">${cb.erp?.toFixed(2)}</span>
+                        </div>
+                        {cb.erp_gantries?.map((g, i) => (
+                          <div key={i} className="flex justify-between text-[10px] text-slate-400 pl-2">
+                            <span>{g.name}</span>
+                            <span className="font-mono">${g.charge?.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
@@ -247,7 +296,7 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
                 </div>
                 <p className="text-[10px] text-slate-400">
                   {isTaxi
-                    ? 'ComfortDelGro metered rate. Excludes ERP, peak/midnight surcharges, and booking fees.'
+                    ? `ComfortDelGro metered rate${cb.erp ? ' + ERP' : ''}. Excludes peak/midnight surcharges and booking fees.`
                     : 'TransitLink adult card fare (distance-based). Includes bus-MRT transfers within 45 min.'}
                 </p>
               </div>

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, Clock, AlertTriangle, DollarSign, Heart, Info, ArrowRight } from 'lucide-react';
 import { formatDuration, formatCost, riskBadgeClass } from '../utils/helpers';
+import CrowdingHeatmap from '../components/CrowdingHeatmap';
 
 const DIMENSIONS = [
   { key: 'time', normKey: 'normalized_time', label: 'Time', icon: Clock, color: 'bg-blue-500', lightColor: 'bg-blue-100' },
@@ -205,9 +206,17 @@ export default function ScoringPage({ results, query }) {
             </thead>
             <tbody>
               <tr className="border-b border-slate-50">
-                <td className="py-2 pr-2 text-slate-600">Time</td>
+                <td className="py-2 pr-2 text-slate-600">Time (Google)</td>
                 {routes.map((r, i) => (
                   <td key={i} className="text-center py-2 px-2 font-mono">{formatDuration(r.time_min)}</td>
+                ))}
+              </tr>
+              <tr className="border-b border-slate-50">
+                <td className="py-2 pr-2 text-slate-600">Realistic Time</td>
+                {routes.map((r, i) => (
+                  <td key={i} className={`text-center py-2 px-2 font-mono ${r.realistic_time_min > r.time_min ? 'text-amber-600 font-semibold' : ''}`}>
+                    {r.realistic_time_min != null ? formatDuration(r.realistic_time_min) : formatDuration(r.time_min)}
+                  </td>
                 ))}
               </tr>
               <tr className="border-b border-slate-50">
@@ -252,6 +261,41 @@ export default function ScoringPage({ results, query }) {
           </table>
         </div>
       )}
+
+      {/* Crowding Heatmaps (Feature 4) */}
+      {(() => {
+        // Collect unique MRT stations from all route steps
+        const stationNames = [];
+        const seen = new Set();
+        for (const route of routes) {
+          for (const step of (route.steps || [])) {
+            if (step.mode === 'Train' && step.from_name) {
+              const name = step.from_name;
+              if (!seen.has(name)) {
+                seen.add(name);
+                stationNames.push(name);
+              }
+            }
+          }
+        }
+        if (!stationNames.length) return null;
+        return (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-3">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Peak Hour Crowding Heatmap</h3>
+            <p className="text-[10px] text-slate-400">Crowding levels throughout the day at MRT stations on your routes</p>
+            <div className="flex gap-3 mb-1 text-[9px] text-slate-400">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500" /> Low</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-500" /> Medium</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-500" /> High</span>
+            </div>
+            <div className="space-y-3">
+              {stationNames.map((name, i) => (
+                <CrowdingHeatmap key={i} stationName={name} />
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Individual route breakdowns */}
       <h3 className="text-sm font-semibold text-slate-700 pt-2">Detailed Breakdown</h3>

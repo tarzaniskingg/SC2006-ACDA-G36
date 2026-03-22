@@ -1,0 +1,177 @@
+[
+  {
+    "name": "CTE (Ang Mo Kio)",
+    "lat": 1.3691,
+    "lng": 103.8577,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 3.00},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 3.00}
+    ]
+  },
+  {
+    "name": "CTE (Braddell Rd)",
+    "lat": 1.3404,
+    "lng": 103.8557,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 2.00},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 2.00}
+    ]
+  },
+  {
+    "name": "AYE (Alexandra Rd)",
+    "lat": 1.2865,
+    "lng": 103.8042,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 2.50},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 2.50}
+    ]
+  },
+  {
+    "name": "PIE (Adam Rd)",
+    "lat": 1.3231,
+    "lng": 103.8131,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 2.00},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 2.00}
+    ]
+  },
+  {
+    "name": "ECP (Tanjong Katong)",
+    "lat": 1.3032,
+    "lng": 103.8951,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 2.50},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 2.50}
+    ]
+  },
+  {
+    "name": "Orchard Cordon",
+    "lat": 1.3048,
+    "lng": 103.8318,
+    "schedule": [
+      {"day": "weekday", "start": "08:00", "end": "20:00", "rate": 3.00},
+      {"day": "saturday", "start": "08:00", "end": "14:00", "rate": 1.50}
+    ]
+  },
+  {
+    "name": "CBD (Raffles Quay)",
+    "lat": 1.2810,
+    "lng": 103.8510,
+    "schedule": [
+      {"day": "weekday", "start": "08:00", "end": "20:00", "rate": 3.00},
+      {"day": "saturday", "start": "08:00", "end": "14:00", "rate": 1.50}
+    ]
+  },
+  {
+    "name": "CBD (Shenton Way)",
+    "lat": 1.2785,
+    "lng": 103.8479,
+    "schedule": [
+      {"day": "weekday", "start": "08:00", "end": "20:00", "rate": 3.00},
+      {"day": "saturday", "start": "08:00", "end": "14:00", "rate": 1.50}
+    ]
+  },
+  {
+    "name": "KPE (Defu Flyover)",
+    "lat": 1.3529,
+    "lng": 103.8928,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 1.50},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 1.50}
+    ]
+  },
+  {
+    "name": "MCE (Marina Coastal)",
+    "lat": 1.2776,
+    "lng": 103.8620,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 2.00},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 2.00}
+    ]
+  },
+  {
+    "name": "BKE (Dairy Farm)",
+    "lat": 1.3683,
+    "lng": 103.7736,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 1.50},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 1.50}
+    ]
+  },
+  {
+    "name": "SLE (Woodlands)",
+    "lat": 1.4222,
+    "lng": 103.7690,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 1.00},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 1.00}
+    ]
+  },
+  {
+    "name": "Bugis-Rochor Cordon",
+    "lat": 1.3005,
+    "lng": 103.8558,
+    "schedule": [
+      {"day": "weekday", "start": "08:00", "end": "20:00", "rate": 2.00},
+      {"day": "saturday", "start": "08:00", "end": "14:00", "rate": 1.00}
+    ]
+  },
+  {
+    "name": "Dunearn Rd / Bukit Timah",
+    "lat": 1.3226,
+    "lng": 103.8036,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 2.00}
+    ]
+  },
+  {
+    "name": "Nicoll Highway",
+    "lat": 1.2997,
+    "lng": 103.8637,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 1.50},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 1.50}
+    ]
+  },
+  {
+    "name": "TPE (Seletar)",
+    "lat": 1.3975,
+    "lng": 103.8756,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 1.50},
+      {"day": "weekday", "start": "17:30", "end": "20:00", "rate": 1.50}
+    ]
+  },
+  {
+    "name": "Thomson Rd",
+    "lat": 1.3170,
+    "lng": 103.8382,
+    "schedule": [
+      {"day": "weekday", "start": "07:30", "end": "09:30", "rate": 1.50}
+    ]
+  },
+  {
+    "name": "River Valley Rd",
+    "lat": 1.2936,
+    "lng": 103.8342,
+    "schedule": [
+      {"day": "weekday", "start": "08:00", "end": "20:00", "rate": 2.00}
+    ]
+  },
+  {
+    "name": "Eu Tong Sen St",
+    "lat": 1.2876,
+    "lng": 103.8439,
+    "schedule": [
+      {"day": "weekday", "start": "08:00", "end": "20:00", "rate": 2.00}
+    ]
+  },
+  {
+    "name": "Havelock Rd",
+    "lat": 1.2893,
+    "lng": 103.8360,
+    "schedule": [
+      {"day": "weekday", "start": "08:00", "end": "20:00", "rate": 2.00}
+    ]
+  }
+]

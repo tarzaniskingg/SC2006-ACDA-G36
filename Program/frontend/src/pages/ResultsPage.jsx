@@ -1,14 +1,39 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Loader2 } from 'lucide-react';
 import RouteCard from '../components/RouteCard';
+import TimeCompare from '../components/TimeCompare';
+import { fetchCompare } from '../utils/api';
 
 export default function ResultsPage({ results, query, selectedRoute, onSelectRoute }) {
   const navigate = useNavigate();
+  const [compareData, setCompareData] = useState(null);
+  const [compareLoading, setCompareLoading] = useState(false);
   const routes = results?.routes || [];
   const trip = results?.trip;
   const weights = trip
     ? { time: trip.wt_time, cost: trip.wt_cost, risk: trip.wt_risk, comfort: trip.wt_comfort }
     : { time: 0.25, cost: 0.25, risk: 0.25, comfort: 0.25 };
+
+  async function handleCompare() {
+    if (!query?.origin || !query?.destination) return;
+    setCompareLoading(true);
+    try {
+      const data = await fetchCompare({
+        origin: query.origin,
+        destination: query.destination,
+        wt_time: weights.time,
+        wt_cost: weights.cost,
+        wt_risk: weights.risk,
+        wt_comfort: weights.comfort,
+      });
+      setCompareData(data);
+    } catch {
+      // silently fail
+    } finally {
+      setCompareLoading(false);
+    }
+  }
 
   if (!routes.length) {
     return (
@@ -70,6 +95,19 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
         </span>
       </div>
 
+      {/* Compare departure times button (Feature 1) */}
+      <button
+        onClick={handleCompare}
+        disabled={compareLoading}
+        className="w-full mb-3 flex items-center justify-center gap-2 bg-white border-2 border-sky-200 text-sky-600 font-semibold py-2.5 px-4 rounded-xl text-xs hover:bg-sky-50 transition-colors disabled:opacity-50"
+      >
+        {compareLoading ? (
+          <><Loader2 size={14} className="animate-spin" /> Comparing...</>
+        ) : (
+          <><Clock size={14} /> Compare Departure Times</>
+        )}
+      </button>
+
       {/* Route cards */}
       <div className="space-y-3">
         {routes.map((route, i) => (
@@ -83,6 +121,11 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
           />
         ))}
       </div>
+
+      {/* Time comparison modal (Feature 1) */}
+      {compareData && (
+        <TimeCompare data={compareData} onClose={() => setCompareData(null)} />
+      )}
 
       {/* View on map CTA */}
       {selectedRoute && (

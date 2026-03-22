@@ -55,6 +55,31 @@ export async function updateSettings(settings) {
   return res.json();
 }
 
+// Feature 1: Compare departure times
+export async function fetchCompare(params) {
+  const query = new URLSearchParams();
+  query.set('origin', params.origin);
+  query.set('destination', params.destination);
+  if (params.times) query.set('times', params.times);
+  if (params.include_transit != null) query.set('include_transit', params.include_transit);
+  if (params.include_driving != null) query.set('include_driving', params.include_driving);
+  if (params.wt_time != null) query.set('wt_time', params.wt_time);
+  if (params.wt_cost != null) query.set('wt_cost', params.wt_cost);
+  if (params.wt_risk != null) query.set('wt_risk', params.wt_risk);
+  if (params.wt_comfort != null) query.set('wt_comfort', params.wt_comfort);
+  const res = await fetch(`${BASE}/routes/compare?${query}`);
+  if (!res.ok) throw new Error(`Compare API error: ${res.status}`);
+  return res.json();
+}
+
+// Feature 4: Crowding heatmap
+export async function fetchCrowdingHeatmap(stationName) {
+  const query = new URLSearchParams({ station_name: stationName });
+  const res = await fetch(`${BASE}/crowding/heatmap?${query}`);
+  if (!res.ok) throw new Error(`Heatmap API error: ${res.status}`);
+  return res.json();
+}
+
 /**
  * Geocode a place name to [lat, lng] using Nominatim (free, no API key).
  * Appends ", Singapore" for better results in SG context.

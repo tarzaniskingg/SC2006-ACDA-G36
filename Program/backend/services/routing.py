@@ -114,12 +114,17 @@ def estimate_cost(distance_m: float, duration_s: float, mode: str) -> dict:
         }
 
 
-def build_route_steps(route: Dict, segments: List[SegmentAssessment]) -> Tuple[List[RouteStep], str, int]:
+def build_route_steps(
+    route: Dict, segments: List[SegmentAssessment],
+    bus_frequencies: list = None,
+) -> Tuple[List[RouteStep], str, int]:
     """
     Build rich RouteStep list from the Google route + assessed segments.
     Returns (steps, path_summary, transfer_count).
+    bus_frequencies is a parallel list to segments with frequency dicts or None.
     """
     mode = route.get("requested_mode", "transit")
+    bus_frequencies = bus_frequencies or []
 
     # Driving: single step
     if mode == "driving":
@@ -144,10 +149,11 @@ def build_route_steps(route: Dict, segments: List[SegmentAssessment]) -> Tuple[L
     except Exception:
         return [], "", 0
 
-    # Build a lookup: (dep_stop, arr_stop) -> SegmentAssessment for transit segments
-    seg_lookup: Dict[Tuple[str, str], SegmentAssessment] = {}
-    for seg in segments:
-        seg_lookup[(seg.from_name, seg.to_name)] = seg
+    # Build a lookup: (dep_stop, arr_stop) -> (SegmentAssessment, freq_data) for transit segments
+    seg_lookup: Dict[Tuple[str, str], Tuple[SegmentAssessment, dict]] = {}
+    for i, seg in enumerate(segments):
+        freq = bus_frequencies[i] if i < len(bus_frequencies) else None
+        seg_lookup[(seg.from_name, seg.to_name)] = (seg, freq)
 
     route_steps: List[RouteStep] = []
     summary_parts: List[str] = []
@@ -162,10 +168,6 @@ def build_route_steps(route: Dict, segments: List[SegmentAssessment]) -> Tuple[L
             dur_min = round(dur_s / 60.0, 1)
             if dur_min < 0.5:
                 continue  # skip trivial walks
-            # Figure out where the walk goes
-            start_loc = gstep.get("start_location") or {}
-            end_loc = gstep.get("end_location") or {}
-            # Use surrounding transit stops for better naming
             from_name = "Start"
             to_name = "Next stop"
             route_steps.append(RouteStep(
@@ -191,8 +193,10 @@ def build_route_steps(route: Dict, segments: List[SegmentAssessment]) -> Tuple[L
             headsign = details.get("headsign")
             num_stops = details.get("num_stops")
 
-            # Find matching assessment segment
-            seg = seg_lookup.get((dep_stop, arr_stop))
+            # Find matching assessment segment + frequency data
+            match = seg_lookup.get((dep_stop, arr_stop))
+            seg = match[0] if match else None
+            freq_data = match[1] if match else None
 
             route_steps.append(RouteStep(
                 mode=mode_name,
@@ -207,6 +211,7 @@ def build_route_steps(route: Dict, segments: List[SegmentAssessment]) -> Tuple[L
                 headsign=headsign,
                 crowding=seg.crowding if seg else None,
                 delay=seg.delay if seg else None,
+                bus_frequency=freq_data,
             ))
             summary_parts.append(f"{mode_name} {line_name} ({dep_stop} -> {arr_stop})")
 
@@ -216,6 +221,18 @@ def build_route_steps(route: Dict, segments: List[SegmentAssessment]) -> Tuple[L
     transfers = max(0, transit_count - 1)
     path_summary = " -> ".join(summary_parts)
     return route_steps, path_summary, transfers
+
+
+def compute_realistic_time(time_min: float, steps: List[RouteStep]) -> float:
+    """
+    Compute realistic travel time by adding expected bus wait buffer.
+    For each bus step with frequency data, add miss_penalty * 0.5 (50% chance of missing).
+    """
+    buffer = 0.0
+    for step in steps:
+        if step.bus_frequency and step.bus_frequency.get("miss_penalty_min"):
+            buffer += step.bus_frequency["miss_penalty_min"] * 0.5
+    return round(time_min + buffer, 1)
 
 
 def _fix_walk_names(steps: List[RouteStep], route: Dict) -> None:
