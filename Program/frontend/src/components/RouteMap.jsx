@@ -39,11 +39,23 @@ function makeLabelIcon(text, bgColor) {
   return L.divIcon({ html, className: '', iconSize: null, iconAnchor: [0, 12] });
 }
 
-function FitBounds({ bounds }) {
+function FitBounds({ bounds, bottomPadding = 50 }) {
   const map = useMap();
+  // Create a stable key from first+last point so we refit when route changes
+  const boundsKey = bounds?.length >= 2
+    ? `${bounds[0][0].toFixed(4)},${bounds[0][1].toFixed(4)}-${bounds[bounds.length-1][0].toFixed(4)},${bounds[bounds.length-1][1].toFixed(4)}-${bounds.length}`
+    : '';
   useEffect(() => {
-    if (bounds?.length >= 2) map.fitBounds(bounds, { padding: [50, 50] });
-  }, [bounds, map]);
+    if (bounds?.length >= 2) {
+      map.fitBounds(bounds, {
+        paddingTopLeft: [40, 80],
+        paddingBottomRight: [40, bottomPadding],
+        maxZoom: 16,
+        animate: true,
+        duration: 0.6,
+      });
+    }
+  }, [boundsKey, bottomPadding, map]);
   return null;
 }
 
@@ -94,7 +106,7 @@ function splitPolylineBySteps(points, steps) {
   return segments;
 }
 
-export default function RouteMap({ route, query }) {
+export default function RouteMap({ route, query, bottomPadding = 50 }) {
   const [geoMarkers, setGeoMarkers] = useState({ start: null, end: null });
 
   const polylinePoints = useMemo(() => {
@@ -119,10 +131,13 @@ export default function RouteMap({ route, query }) {
   const startMarker = hasPolyline ? polylinePoints[0] : geoMarkers.start;
   const endMarker = hasPolyline ? polylinePoints[polylinePoints.length - 1] : geoMarkers.end;
 
-  const boundsPoints = [];
-  if (startMarker) boundsPoints.push(startMarker);
-  if (endMarker) boundsPoints.push(endMarker);
-  if (hasPolyline) boundsPoints.push(...polylinePoints);
+  const boundsPoints = useMemo(() => {
+    const pts = [];
+    if (startMarker) pts.push(startMarker);
+    if (endMarker) pts.push(endMarker);
+    if (hasPolyline) pts.push(...polylinePoints);
+    return pts;
+  }, [startMarker, endMarker, hasPolyline, polylinePoints]);
 
   // Split the polyline into per-step colored segments
   const coloredSegments = useMemo(() => {
@@ -158,7 +173,7 @@ export default function RouteMap({ route, query }) {
       style={{ width: '100%', height: '100%' }} zoomControl={false}>
       <TileLayer attribution={TILE_ATTR} url={TILE_URL} />
       <InvalidateSize />
-      {boundsPoints.length >= 2 && <FitBounds bounds={boundsPoints} />}
+      {boundsPoints.length >= 2 && <FitBounds bounds={boundsPoints} bottomPadding={bottomPadding} />}
 
       {/* Per-step colored polylines */}
       {hasModeSegments && coloredSegments.map((seg, i) => {

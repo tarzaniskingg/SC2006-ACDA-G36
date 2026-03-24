@@ -258,12 +258,16 @@ def _mrt_crowding_for_station(station_name: str, query_time: Optional[datetime] 
                     break
 
                 # Find the interval matching the query time (or current time)
+                # Compare by time-of-day only (HH:MM) since PCD intervals
+                # have today's date but query_time might be tomorrow
                 now = query_time or datetime.now(timezone(timedelta(hours=8)))  # SGT
+                now_minutes = now.hour * 60 + now.minute
                 best_interval = intervals[0]  # default to first
                 for iv in intervals:
                     try:
                         iv_start = datetime.fromisoformat(iv["Start"])
-                        if iv_start <= now:
+                        iv_minutes = iv_start.hour * 60 + iv_start.minute
+                        if iv_minutes <= now_minutes:
                             best_interval = iv
                         else:
                             break

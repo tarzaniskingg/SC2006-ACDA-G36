@@ -320,11 +320,110 @@ def refresh_datasets():
 # Feature 1: Departure Time Comparison
 # ---------------------------------------------------------------------------
 
+def _build_compare_slots() -> List[dict]:
+    """
+    Build 3 smart comparison groups, each with future-safe departure times.
+    - Morning rush: 07:30, 08:00, 08:30
+    - Around now: now, +30 min, +1 hr
+    - Evening rush: 17:30, 18:00, 18:30
+    Any slot in the past is pushed to tomorrow.
+    """
+    SGT = timezone(timedelta(hours=8))
+    now = datetime.now(SGT)
+
+    def _future(h, m):
+        """Return a datetime for h:m today if it's still in the future, else tomorrow."""
+        candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
+    groups = [
+        {
+            "label": "Morning Rush",
+            "times": [
+                ("07:30", _future(7, 30)),
+                ("08:00", _future(8, 0)),
+                ("08:30", _future(8, 30)),
+            ],
+        },
+        {
+            "label": "Around Now",
+            "times": [
+                ("Now", now + timedelta(minutes=1)),
+                ("+30 min", now + timedelta(minutes=30)),
+                ("+1 hr", now + timedelta(hours=1)),
+            ],
+        },
+        {
+            "label": "Evening Rush",
+            "times": [
+                ("17:30", _future(17, 30)),
+                ("18:00", _future(18, 0)),
+                ("18:30", _future(18, 30)),
+            ],
+        },
+    ]
+    return groups
+
+
+def _run_routes_for_slot(
+    origin: str, destination: str, slot_dt: datetime,
+    modes: List[str], weights: dict,
+) -> List[dict]:
+    """Run the full route pipeline for a single departure time slot."""
+    dep_str = slot_dt.isoformat()
+    raw_routes = get_directions(origin, destination, modes=modes,
+                                departure_time=dep_str, alternatives=True)
+    candidates = []
+    for r in raw_routes:
+        legs = r.get("legs", [])
+        if not legs:
+            continue
+        leg = legs[0]
+        duration_s = (leg.get("duration") or {}).get("value", 0)
+        distance_m = (leg.get("distance") or {}).get("value", 0)
+        rmode = r.get("requested_mode", "transit")
+
+        segs, bus_freqs = assess_segments_from_google_route(r, departure_time=slot_dt)
+        crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
+        route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
+        cost_info = estimate_cost(distance_m, duration_s, "driving" if rmode == "driving" else "transit")
+        walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
+        time_min = round(duration_s / 60.0, 1)
+        realistic_time_min = compute_realistic_time(time_min, route_steps)
+
+        candidates.append({
+            "category": "Taxi/Private Hire" if rmode == "driving" else "Public Transit",
+            "path_summary": path_summary or ("Drive" if rmode == "driving" else ""),
+            "time_min": time_min,
+            "realistic_time_min": realistic_time_min,
+            "cost_est": cost_info["total"],
+            "cost_breakdown": cost_info,
+            "distance_km": round(distance_m / 1000.0, 2),
+            "walk_min": round(walk_min, 1),
+            "transfers": transfers if rmode != "driving" else 0,
+            "steps": [s.model_dump() for s in route_steps],
+            "risk_crowding_cat": crowd_cat.value,
+            "risk_crowding_num": crowd_num,
+            "risk_delay_cat": delay_cat.value,
+            "risk_delay_num": delay_num,
+            "risk_cat": max(crowd_cat.value, delay_cat.value,
+                            key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
+            "uses_fallback": uses_fallback,
+        })
+
+    if candidates:
+        ranked = rank_routes(candidates, weights)
+        add_explanations(ranked, weights)
+        return ranked[:3]
+    return []
+
+
 @router.get("/routes/compare", response_model=CompareResponse)
 def compare_departure_times(
     origin: str,
     destination: str,
-    times: str = "07:00,07:30,08:00,08:30,09:00",
     include_transit: Optional[bool] = None,
     include_driving: Optional[bool] = None,
     wt_time: float = 0.25,
@@ -332,9 +431,11 @@ def compare_departure_times(
     wt_risk: float = 0.25,
     wt_comfort: float = 0.25,
 ):
-    """Compare routes across multiple departure times."""
-    from datetime import date as date_type
-    time_slots = [t.strip() for t in times.split(",") if t.strip()]
+    """
+    Compare routes across 3 time groups: Morning Rush, Around Now, Evening Rush.
+    All departure times are guaranteed to be in the future so Google returns
+    time-specific results.
+    """
     weights = {"time": wt_time, "cost": wt_cost, "risk": wt_risk, "comfort": wt_comfort}
 
     if include_transit is not None or include_driving is not None:
@@ -346,67 +447,15 @@ def compare_departure_times(
     else:
         modes = ["transit", "driving"]
 
+    groups = _build_compare_slots()
     slots: List[CompareSlot] = []
-    today = date_type.today()
 
-    for time_str in time_slots:
-        try:
-            h, m = map(int, time_str.split(":"))
-            slot_dt = datetime(today.year, today.month, today.day, h, m,
-                               tzinfo=timezone(timedelta(hours=8)))
-            dep_str = slot_dt.isoformat()
-        except Exception:
-            continue
-
-        raw_routes = get_directions(origin, destination, modes=modes,
-                                     departure_time=dep_str, alternatives=True)
-        candidates = []
-        for r in raw_routes:
-            legs = r.get("legs", [])
-            if not legs:
-                continue
-            leg = legs[0]
-            duration_s = (leg.get("duration") or {}).get("value", 0)
-            distance_m = (leg.get("distance") or {}).get("value", 0)
-            rmode = r.get("requested_mode", "transit")
-
-            segs, bus_freqs = assess_segments_from_google_route(r, departure_time=slot_dt)
-            crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
-            route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
-            cost_info = estimate_cost(distance_m, duration_s, "driving" if rmode == "driving" else "transit")
-            walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
-            time_min = round(duration_s / 60.0, 1)
-            realistic_time_min = compute_realistic_time(time_min, route_steps)
-
-            candidates.append({
-                "category": "Taxi/Private Hire" if rmode == "driving" else "Public Transit",
-                "path_summary": path_summary or ("Drive" if rmode == "driving" else ""),
-                "time_min": time_min,
-                "realistic_time_min": realistic_time_min,
-                "cost_est": cost_info["total"],
-                "cost_breakdown": cost_info,
-                "distance_km": round(distance_m / 1000.0, 2),
-                "walk_min": round(walk_min, 1),
-                "transfers": transfers if rmode != "driving" else 0,
-                "steps": [s.model_dump() for s in route_steps],
-                "risk_crowding_cat": crowd_cat.value,
-                "risk_crowding_num": crowd_num,
-                "risk_delay_cat": delay_cat.value,
-                "risk_delay_num": delay_num,
-                "risk_cat": max(crowd_cat.value, delay_cat.value,
-                                key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
-                "uses_fallback": uses_fallback,
-            })
-
-        if candidates:
-            ranked = rank_routes(candidates, weights)
-            add_explanations(ranked, weights)
-            top = ranked[:3]
-        else:
-            top = []
-
-        best_score = top[0]["score"] if top else None
-        slots.append(CompareSlot(time=time_str, routes=top, best_score=best_score))
+    for group in groups:
+        for time_label, slot_dt in group["times"]:
+            top = _run_routes_for_slot(origin, destination, slot_dt, modes, weights)
+            best_score = top[0]["score"] if top else None
+            display_label = f"{group['label']}: {time_label}"
+            slots.append(CompareSlot(time=display_label, routes=top, best_score=best_score))
 
     return CompareResponse(origin=origin, destination=destination, slots=slots)
 

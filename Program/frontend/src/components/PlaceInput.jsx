@@ -67,7 +67,7 @@ function MiniMap({ lat, lon }) {
   if (!lat || !lon) return null;
   const pos = [lat, lon];
   return (
-    <div className="h-32 rounded-xl overflow-hidden border border-slate-200 mt-2">
+    <div className="h-32 rounded-xl overflow-hidden border border-white/[0.08] mt-2">
       <MapContainer center={pos} zoom={16} style={{ width: '100%', height: '100%' }}
         zoomControl={false} dragging={false} scrollWheelZoom={false}
         doubleClickZoom={false} attributionControl={false}>
@@ -151,25 +151,26 @@ export default function PlaceInput({ value, onChange, onLocationSelect, placehol
         onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
         placeholder={placeholder}
         autoComplete="off"
-        className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-400 transition-all"
+        className="input-dark w-full pl-9 pr-4 py-3 rounded-xl text-sm"
       />
       {loading && (
         <div className="absolute right-3 top-[18px] -translate-y-1/2">
-          <div className="w-4 h-4 border-2 border-slate-300 border-t-sky-500 rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-slate-600 border-t-amber-400 rounded-full animate-spin" />
         </div>
       )}
       {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden max-h-52 overflow-y-auto">
+        <div className="absolute z-50 left-0 right-0 top-full mt-1 rounded-xl overflow-hidden max-h-52 overflow-y-auto border border-white/[0.1]"
+          style={{ background: 'rgba(15, 23, 42, 0.95)', backdropFilter: 'blur(16px)' }}>
           {suggestions.map((s, i) => (
             <button
               key={i}
               type="button"
               onClick={() => selectSuggestion(s)}
-              className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-sky-50 transition-colors border-b border-slate-50 last:border-0"
+              className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-white/[0.06] transition-colors border-b border-white/[0.04] last:border-0"
             >
               <span className="font-medium">{s.title}</span>
               {s.subtitle && (
-                <span className="text-xs text-slate-400 block truncate">{s.subtitle}</span>
+                <span className="text-[11px] text-slate-500 block truncate">{s.subtitle}</span>
               )}
             </button>
           ))}
