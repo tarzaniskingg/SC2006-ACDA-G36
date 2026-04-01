@@ -27,9 +27,18 @@ def get_bus_arrival(bus_stop_code):
         "v3/BusArrival",
         params={"BusStopCode": bus_stop_code})
 
-#carpark availability 
+#carpark availability (paginated — LTA returns max 500 per call)
 def get_carpark_availability():
-    return get("CarParkAvailabilityv2")
+    all_items = []
+    skip = 0
+    while True:
+        data = get("CarParkAvailabilityv2", params={"$skip": skip})
+        batch = data.get("value", [])
+        if not batch:
+            break
+        all_items.extend(batch)
+        skip += len(batch)
+    return {"value": all_items}
 
 #est travel times
 def get_est_travel_time():

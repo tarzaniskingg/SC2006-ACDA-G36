@@ -101,6 +101,8 @@ class RouteOption(BaseModel):
     weather: Optional[Dict] = None
     # Feature 3: ERP cost data
     erp: Optional[Dict] = None
+    # Feature 6: Parking availability near destination
+    parking: Optional[Dict] = None
 
 
 class AssessmentResponse(BaseModel):

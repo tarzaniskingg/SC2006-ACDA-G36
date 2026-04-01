@@ -1,0 +1,502 @@
+@startuml SGTravelBud_Class_Diagram
+
+skinparam classAttributeIconSize 0
+skinparam classFontSize 11
+skinparam classAttributeFontSize 10
+skinparam classFontName "Segoe UI"
+skinparam packageFontSize 13
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 50
+
+title SGTravelBud — Class Diagram\n(Boundary–Control–Entity–Enumeration–Persistence)
+
+' ============================================================
+'  ENUMERATION
+' ============================================================
+
+package "<<enumeration>>" #EEDDFF {
+
+  enum RiskCategory {
+    Low = "Low"
+    Medium = "Medium"
+    High = "High"
+    Unknown = "Unknown"
+  }
+
+}
+
+' ============================================================
+'  ENTITY
+' ============================================================
+
+package "<<entity>>" #DDFFDD {
+
+  class RiskIndicator {
+    - category : RiskCategory
+    - numeric : int {1..3}
+    - source : str {"realtime"|"fallback"}
+    - is_fallback : bool
+    - timestamp : Optional[str]
+  }
+
+  class SegmentAssessment {
+    - mode : str
+    - from_name : str
+    - to_name : str
+    - crowding : RiskIndicator
+    - delay : RiskIndicator
+  }
+
+  class RouteStep {
+    - mode : str {"Walk"|"Bus"|"Train"|"Drive"}
+    - from_name : str
+    - to_name : str
+    - duration_min : float
+    - distance_m : Optional[float]
+    - line_name : Optional[str]
+    - num_stops : Optional[int]
+    - departure_time : Optional[str]
+    - arrival_time : Optional[str]
+    - headsign : Optional[str]
+    - crowding : Optional[RiskIndicator]
+    - delay : Optional[RiskIndicator]
+    - bus_frequency : Optional[Dict]
+  }
+
+  class RouteOption {
+    - category : str
+    - path_summary : str
+    - time_min : float
+    - realistic_time_min : Optional[float]
+    - cost_est : float
+    - cost_breakdown : Optional[Dict]
+    - distance_km : float
+    - walk_min : float
+    - transfers : int
+    - steps : List[RouteStep]
+    - overview_polyline : Optional[str]
+    - risk_crowding_cat : RiskCategory
+    - risk_crowding_num : int
+    - risk_delay_cat : RiskCategory
+    - risk_delay_num : int
+    - risk_num : float
+    - risk_cat : str
+    - comfort_num : float
+    - normalized_time : float
+    - normalized_cost : float
+    - normalized_risk : float
+    - normalized_comfort : float
+    - score : float
+    - uses_fallback : bool
+    - explanation : str
+    - weather : Optional[Dict]
+    - erp : Optional[Dict]
+  }
+
+  class TripRequest {
+    - origin : str
+    - destination : str
+    - departure_time : Optional[str]
+    - mrt_only : bool
+    - public_only : bool
+    - taxi : bool
+    - drive : bool
+    - hybrid_taxi : bool
+    - max_walk_min : Optional[int]
+    - max_transfers : Optional[int]
+    - max_budget : Optional[float]
+    - wt_time : float
+    - wt_cost : float
+    - wt_risk : float
+    - wt_comfort : float
+  }
+
+  ' --- Response base interface ---
+  interface IAPIResponse <<interface>> {
+    + message : Optional[str]
+  }
+
+  class RoutesResponse implements IAPIResponse {
+    - trip : TripRequest
+    - routes : List[RouteOption]
+    - message : Optional[str]
+  }
+
+  class AssessmentResponse implements IAPIResponse {
+    - trip : TripRequest
+    - segments : List[SegmentAssessment]
+    - message : Optional[str]
+  }
+
+  class CompareSlot {
+    - time : str
+    - routes : List[RouteOption]
+    - best_score : Optional[float]
+  }
+
+  class CompareResponse {
+    - origin : str
+    - destination : str
+    - slots : List[CompareSlot]
+  }
+
+  class CrowdingInterval {
+    - start : str
+    - crowd_level : str
+  }
+
+  class CrowdingHeatmapResponse {
+    - station : str
+    - line : str
+    - intervals : List[CrowdingInterval]
+  }
+
+  class Settings {
+    - language : str
+    - units : str
+    - default_wt_time : float
+    - default_wt_cost : float
+    - default_wt_risk : float
+    - default_wt_comfort : float
+  }
+
+  class DatasetStatus {
+    - last_retrieved : Optional[str]
+    - ttl_sec : int
+    - is_fallback : bool
+    - source : str
+  }
+
+  class DatasetsStatusResponse {
+    - sources : Dict[str, DatasetStatus]
+  }
+
+}
+
+' ============================================================
+'  CONTROL
+' ============================================================
+
+package "<<control>>" #FFFFCC {
+
+  ' --- Risk Assessor interface (Strategy pattern) ---
+  interface IRiskAssessor <<interface>> {
+    + assess(identifier : str, ...) : RiskIndicator
+  }
+
+  class BusCrowdingAssessor implements IRiskAssessor {
+    + assess(stop_name, service_no, lat?, lng?) : RiskIndicator
+    .. maps to ..
+    _bus_crowding_for_stop_and_service()
+  }
+
+  class MRTCrowdingAssessor implements IRiskAssessor {
+    + assess(station_name, query_time?) : RiskIndicator
+    .. maps to ..
+    _mrt_crowding_for_station()
+  }
+
+  class TrainDelayAssessor implements IRiskAssessor {
+    + assess(station_name) : RiskIndicator
+    .. maps to ..
+    _train_delay_for_segment()
+  }
+
+  class DrivingDelayAssessor implements IRiskAssessor {
+    + assess(start_lat?, start_lng?, end_lat?, end_lng?) : RiskIndicator
+    .. maps to ..
+    _delay_risk_for_driving_segment()
+  }
+
+  class AssessmentController <<service>> {
+    - _MRT_STATIONS : Dict[str, Tuple]
+    - _CODE_TO_LINE : Dict[str, str]
+    - _bus_stops_cache : Optional[List]
+    - assessors : List[IRiskAssessor]
+    __
+    + assess_segments_from_google_route(route, departure_time?) : Tuple[List[SegmentAssessment], List[Optional[Dict]]]
+    + make_risk(cat, source, is_fallback, timestamp?) : RiskIndicator
+    - _normalize_station_name(name) : str
+    - _lookup_station(station_name) : Optional[Tuple[str, str]]
+    - _haversine_m(lat1, lng1, lat2, lng2) : float
+    - _lookup_bus_stop_code(stop_name, lat?, lng?) : Optional[str]
+    - _bus_frequency_for_stop_and_service(stop_name, service_no, lat?, lng?) : Optional[Dict]
+  }
+
+  class RoutingController <<service>> {
+    + aggregate_route_risks(segments) : Tuple[RiskCategory, int, RiskCategory, int, bool]
+    + estimate_cost(distance_m, duration_s, mode) : Dict
+    + build_route_steps(route, segments, bus_frequencies?) : Tuple[List[RouteStep], str, int]
+    + compute_realistic_time(time_min, steps) : float
+    + rank_routes(candidate_routes, weights) : List[Dict]
+    + add_explanations(routes, weights) : void
+    - _fix_walk_names(steps, route) : void
+  }
+
+  class ScoringController <<service>> {
+    + RISK_NUMERIC : Dict[str, int]
+    __
+    + normalize(values, invert?) : List[float]
+    + compute_risk(crowding_num, delay_num) : float
+    + compute_comfort(walk_min, transfers) : float
+    + composite_score(normalized, weights) : float
+    + tie_break_key(route) : Tuple
+    + explain(route, top_weight) : str
+  }
+
+  class WeatherController <<service>> {
+    - _NEA_AREAS : Dict[str, Tuple[float, float]]
+    - _RAIN_KEYWORDS : Set[str]
+    __
+    + get_weather_for_route(origin_lat, origin_lng, dest_lat, dest_lng) : Optional[Dict]
+    - _haversine_km(lat1, lng1, lat2, lng2) : float
+    - _nearest_area(lat, lng) : Optional[str]
+  }
+
+  class ERPController <<service>> {
+    - _erp_gantries : Optional[List[Dict]]
+    __
+    + calculate_erp(overview_polyline?, departure_time?) : Optional[Dict]
+    - _load_gantries() : List[Dict]
+    - _haversine_m(lat1, lng1, lat2, lng2) : float
+    - _decode_polyline(encoded) : List[Tuple[float, float]]
+    - _get_rate_for_time(schedule, dt) : float
+  }
+
+}
+
+' ============================================================
+'  BOUNDARY
+' ============================================================
+
+package "<<boundary>>" #FFE0CC {
+
+  class RoutesAPI <<REST endpoint>> {
+    + GET  /routes(origin, destination, departure_time?, ...) : RoutesResponse
+    + GET  /assessment(origin, destination, departure_time?) : AssessmentResponse
+    + POST /assessment(route) : AssessmentResponse
+    + GET  /routes/compare(origin, destination, ...) : CompareResponse
+    + GET  /crowding/heatmap(station_name, line?) : CrowdingHeatmapResponse
+    + GET  /datasets() : DatasetsStatusResponse
+    + GET  /settings() : Settings
+    + PUT  /settings(settings) : Settings
+    + POST /refresh() : DatasetsStatusResponse
+    + GET  /gmaps/directions(origin, destination, mode, ...) : Dict
+    __
+    - _build_compare_slots() : List[Dict]
+    - _run_routes_for_slot(origin, dest, slot_dt, modes, weights) : List[Dict]
+  }
+
+  class MainView <<React page>> {
+    - searchOpen : bool
+    - sheetState : int {PEEK|RESULTS}
+    - origin : str
+    - destination : str
+    - modes : {transit, driving}
+    - weights : {time, cost, risk, comfort}
+    - constraints : {max_walk_min, max_transfers, max_budget}
+    __
+    + handleSearch() : void
+    + handleRefresh() : void
+    + handleCompare() : void
+    + swapPlaces() : void
+    + toggleMode(key) : void
+  }
+
+  class RouteCard <<React component>> {
+    - expanded : bool
+    __
+    + render(route, rank, selected, weights) : JSX
+  }
+
+  class RouteMap <<React component>> {
+    - geoMarkers : {start, end}
+    __
+    + render(route, query, bottomPadding) : JSX
+    - FitBounds(bounds, bottomPadding) : void
+    - splitPolylineBySteps(points, steps) : List
+  }
+
+  class TimeCompare <<React component>> {
+    + render(data, onClose) : JSX
+    - GroupTable(groupName, slots) : JSX
+  }
+
+  class CrowdingHeatmap <<React component>> {
+    - intervals : List
+    - label : str
+    __
+    + render(stationName, compact?) : JSX
+  }
+
+  class ScoringPage <<React page>> {
+    + render(results, query) : JSX
+    - RouteScoreCard(route, rank, weights) : JSX
+  }
+
+  class SettingsPage <<React page>> {
+    - settings : Settings
+    - datasets : Dict
+    __
+    + handleSave() : void
+    + handleRefresh() : void
+  }
+
+  class PlaceInput <<React component>> {
+    - suggestions : List
+    - showDropdown : bool
+    - loading : bool
+    - selectedLoc : {lat, lon}
+    __
+    + handleChange(event) : void
+    + selectSuggestion(s) : void
+    - nominatimSearch(query) : List
+  }
+
+  class RiskBadge <<React component>> {
+    + render(category, label?) : JSX
+  }
+
+}
+
+' ============================================================
+'  PERSISTENCE
+' ============================================================
+
+package "<<persistence>>" #FFDDDD {
+
+  class CacheItem {
+    - value : Any
+    - ttl_sec : int
+    - source : str
+    - retrieved_at : float
+    __
+    + is_expired : bool <<property>>
+  }
+
+  class TTLCache {
+    - _data : Dict[str, CacheItem]
+    __
+    + get(key) : Optional[CacheItem]
+    + set(key, value, ttl_sec, source?) : CacheItem
+    + invalidate(key?) : void
+    + status() : Dict[str, Dict]
+  }
+
+  ' --- External API Client interface ---
+  interface IExternalAPIClient <<interface>> {
+    + fetch(params) : Tuple[data, timestamp, is_fallback]
+  }
+  note right of IExternalAPIClient
+    All clients follow the pattern:
+    1. Check TTLCache
+    2. If miss/expired → call external API
+    3. If API fails → return stale cache (fallback)
+    4. Return (data, timestamp, is_fallback)
+  end note
+
+  class LTAClient implements IExternalAPIClient {
+    + get_bus_arrival(bus_stop_code) : Tuple[Dict, float, bool]
+    + get_pcd_forecast(train_line?) : Tuple[Dict, float, bool]
+    + get_train_service_alerts() : Tuple[Dict, float, bool]
+    + get_traffic_speed_bands() : Tuple[Dict, float, bool]
+    + get_bus_stops() : Tuple[List, float, bool]
+    + get_est_travel_times() : Tuple[Dict, float, bool]
+    + get_taxi_availability() : Tuple[Dict, float, bool]
+    + get_carpark_availability() : Tuple[Dict, float, bool]
+  }
+
+  class GoogleClient implements IExternalAPIClient {
+    + get_directions(origin, destination, modes, departure_time?, alternatives?) : List[Dict]
+  }
+
+  class NEAClient implements IExternalAPIClient {
+    + get_2hr_forecast() : Tuple[Dict, float, bool]
+  }
+
+  class ERPFixture <<JSON file>> {
+    - erp_gantries.json : List[Dict]
+    __
+    Stores ~20 ERP gantries with
+    lat, lng, and rate schedules
+  }
+
+  class SettingsFile <<JSON file>> {
+    - settings.json : Dict
+    __
+    Stores user preferences:
+    language, units, default weights
+  }
+
+}
+
+
+' ============================================================
+'  RELATIONSHIPS
+' ============================================================
+
+' --- Entity internal ---
+RiskIndicator --> RiskCategory : category
+SegmentAssessment *-- "2" RiskIndicator : crowding, delay
+RouteStep *-- "0..1" RiskIndicator : crowding
+RouteStep *-- "0..1" RiskIndicator : delay
+RouteOption *-- "0..*" RouteStep : steps
+RouteOption --> "2" RiskCategory : crowding_cat, delay_cat
+RoutesResponse *-- TripRequest : trip
+RoutesResponse *-- "0..*" RouteOption : routes
+AssessmentResponse *-- TripRequest : trip
+AssessmentResponse *-- "0..*" SegmentAssessment : segments
+CompareResponse *-- "0..*" CompareSlot : slots
+CompareSlot *-- "0..*" RouteOption : routes
+CrowdingHeatmapResponse *-- "0..*" CrowdingInterval : intervals
+DatasetsStatusResponse *-- "0..*" DatasetStatus : sources
+
+' --- Boundary → Control ---
+RoutesAPI ..> AssessmentController : uses
+RoutesAPI ..> RoutingController : uses
+RoutesAPI ..> WeatherController : uses
+RoutesAPI ..> ERPController : uses
+
+' --- Control internal ---
+AssessmentController o-- "4" IRiskAssessor : delegates to
+RoutingController ..> ScoringController : delegates scoring
+BusCrowdingAssessor ..> LTAClient : reads bus arrival
+MRTCrowdingAssessor ..> LTAClient : reads PCD forecast
+TrainDelayAssessor ..> LTAClient : reads service alerts
+DrivingDelayAssessor ..> LTAClient : reads speed bands
+
+' --- Control → Entity (creates) ---
+AssessmentController ..> SegmentAssessment : creates
+AssessmentController ..> RiskIndicator : creates
+RoutingController ..> RouteStep : creates
+
+' --- Control → Persistence ---
+WeatherController ..> NEAClient : reads forecast
+ERPController ..> ERPFixture : reads gantries
+RoutesAPI ..> GoogleClient : fetches directions
+RoutesAPI ..> SettingsFile : reads/writes
+
+' --- Persistence internal ---
+LTAClient ..> TTLCache : caches via
+GoogleClient ..> TTLCache : caches via
+NEAClient ..> TTLCache : caches via
+TTLCache *-- "0..*" CacheItem : stores
+
+' --- Frontend Boundary internal ---
+MainView ..> RouteCard : renders
+MainView ..> RouteMap : renders
+MainView ..> PlaceInput : renders
+MainView ..> TimeCompare : renders
+ScoringPage ..> CrowdingHeatmap : renders
+RouteCard ..> RiskBadge : renders
+
+' --- Frontend → Backend Boundary ---
+MainView ..> RoutesAPI : "fetchRoutes()\nfetchCompare()"
+ScoringPage ..> RoutesAPI : "fetchCrowdingHeatmap()"
+SettingsPage ..> RoutesAPI : "fetchSettings()\nupdateSettings()\nfetchDatasets()\nrefreshCache()"
+CrowdingHeatmap ..> RoutesAPI : "fetchCrowdingHeatmap()"
+PlaceInput ..> "Nominatim\n(external)" : "geocode search"
+
+@enduml

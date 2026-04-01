@@ -1,7 +1,7 @@
-import { Clock, DollarSign, Users, AlertTriangle, ChevronDown, ChevronUp, Footprints, Bus, TrainFront, Car, Ship, BarChart3, Receipt, CloudRain, Timer } from 'lucide-react';
+import { Clock, DollarSign, Users, AlertTriangle, ChevronDown, ChevronUp, Footprints, Bus, TrainFront, Car, Ship, BarChart3, Receipt, CloudRain, Timer, ParkingCircle } from 'lucide-react';
 import { useState } from 'react';
 import RiskBadge from './RiskBadge';
-import { formatDuration, formatCost, modeColor, isRainy } from '../utils/helpers';
+import { formatDuration, formatCost, modeColor, isRainy, parkingStatusClass } from '../utils/helpers';
 
 const modeIcons = { Walk: Footprints, Bus: Bus, Train: TrainFront, Drive: Car, Tram: TrainFront, Ferry: Ship };
 
@@ -17,6 +17,7 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
 
   const cb = route.cost_breakdown;
   const isTaxi = cb?.mode === 'taxi';
+  const isOwnCar = cb?.mode === 'owncar';
   const hasFreqWarning = route.steps?.some(s => s.bus_frequency?.frequency_cat === 'Low');
 
   return (
@@ -78,6 +79,16 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
           {route.steps.filter(s => s.bus_frequency?.frequency_cat === 'Low').map((s, i) => (
             <span key={i} className="flex items-center gap-1"><Timer size={10} /> Bus {s.line_name} every {s.bus_frequency.frequency_min}min</span>
           ))}
+        </div>
+      )}
+      {route.parking?.status === 'full' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-red-300 mb-1">
+          <ParkingCircle size={11} /> No parking available near destination
+        </div>
+      )}
+      {route.parking?.status === 'limited' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-amber-300 mb-1">
+          <ParkingCircle size={11} /> Limited parking ({route.parking.total_available_lots} lots nearby)
         </div>
       )}
 
@@ -142,6 +153,13 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
                       <div className="flex justify-between text-amber-400"><span>ERP</span><span className="font-mono">${cb.erp?.toFixed(2)}</span></div>
                     )}
                   </>
+                ) : isOwnCar ? (
+                  <>
+                    <div className="flex justify-between"><span className="text-slate-400">Fuel ({cb.distance_km}km)</span><span className="font-mono text-slate-300">${cb.fuel_cost?.toFixed(2)}</span></div>
+                    {cb.erp > 0 && (
+                      <div className="flex justify-between text-amber-400"><span>ERP</span><span className="font-mono">${cb.erp?.toFixed(2)}</span></div>
+                    )}
+                  </>
                 ) : (
                   <div className="flex justify-between"><span className="text-slate-400">Card fare ({cb.distance_km}km)</span><span className="font-mono text-slate-300">${cb.base_fare?.toFixed(2)}</span></div>
                 )}
@@ -152,6 +170,34 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
               </div>
             )}
           </div>
+
+          {/* Parking near destination (driving only) */}
+          {route.parking && (
+            <div className="bg-white/[0.03] rounded-xl p-2.5 border border-white/[0.05]">
+              <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-display flex items-center gap-1 mb-1.5">
+                <ParkingCircle size={10} /> Parking Near Destination
+              </h4>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${parkingStatusClass(route.parking.status)}`}>
+                  {route.parking.status === 'full' ? 'Full' : route.parking.status === 'limited' ? 'Limited' : 'Available'}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {route.parking.total_available_lots} lots across {route.parking.nearby_count} carpark{route.parking.nearby_count !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="space-y-0.5">
+                {route.parking.carparks?.map((cp, i) => (
+                  <div key={i} className="flex items-center justify-between text-[10px]">
+                    <span className="text-slate-400 truncate flex-1 mr-2">{cp.name}</span>
+                    <span className="text-slate-500 shrink-0 mr-2">{cp.distance_m}m</span>
+                    <span className={`font-mono shrink-0 ${cp.available_lots === 0 ? 'text-red-400' : cp.available_lots <= 10 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {cp.available_lots} lots
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Score mini-breakdown */}
           <div className="bg-white/[0.03] rounded-xl p-2.5 border border-white/[0.05]">

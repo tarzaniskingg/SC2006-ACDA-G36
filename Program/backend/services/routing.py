@@ -56,17 +56,13 @@ def estimate_cost(distance_m: float, duration_s: float, mode: str) -> dict:
     distance_km = max(0.0, distance_m) / 1000.0
     duration_min = max(0.0, duration_s) / 60.0
 
-    if mode == "driving":
+    if mode == "driving" or mode == "taxi":
         # ComfortDelGro taxi meter (2024 rates)
         flag_down = 4.00
-        # First 10km: $0.22 per 400m = $0.55/km
-        # After 10km: $0.22 per 350m ≈ $0.629/km
         if distance_km <= 10:
             distance_charge = distance_km * 0.55
         else:
             distance_charge = (10 * 0.55) + ((distance_km - 10) * 0.629)
-        # Waiting / slow speed: $0.22 per 45s of waiting
-        # Approximate idle time as 20% of total duration for city driving
         idle_min = duration_min * 0.20
         waiting_charge = (idle_min * 60 / 45) * 0.22
         total = flag_down + distance_charge + waiting_charge
@@ -77,6 +73,16 @@ def estimate_cost(distance_m: float, duration_s: float, mode: str) -> dict:
             "distance_km": round(distance_km, 2),
             "waiting_charge": round(waiting_charge, 2),
             "mode": "taxi",
+        }
+    elif mode == "owncar":
+        # Own car: fuel cost only (no flag-down, no waiting charge)
+        # Average SG fuel: ~$0.12/km (based on $2.50/L, ~21km/L efficiency)
+        fuel_cost = distance_km * 0.12
+        return {
+            "total": round(fuel_cost, 2),
+            "fuel_cost": round(fuel_cost, 2),
+            "distance_km": round(distance_km, 2),
+            "mode": "owncar",
         }
     else:
         # Singapore public transit — adult card fare (TransitLink 2024)

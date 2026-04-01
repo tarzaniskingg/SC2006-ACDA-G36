@@ -26,6 +26,7 @@ from ..clients.google import get_directions
 from ..clients import lta as lta_client
 from ..services.weather import get_weather_for_route
 from ..services.erp import calculate_erp
+from ..services.parking import find_nearby_carparks
 
 
 router = APIRouter()
@@ -103,6 +104,7 @@ def get_routes(
     raw_routes = get_directions(origin, destination, modes=modes, departure_time=departure_time, alternatives=True)
     candidates = []
     for r in raw_routes:
+      try:
         legs = r.get("legs", [])
         if not legs:
             continue
@@ -118,8 +120,6 @@ def get_routes(
         # Build rich step-by-step breakdown (pass bus_freqs)
         route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
 
-        cost_info = estimate_cost(distance_m, duration_s, "driving" if mode == "driving" else "transit")
-
         # Compute walking minutes from steps
         walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
 
@@ -134,15 +134,6 @@ def get_routes(
         except Exception:
             pass
 
-        # Feature 3: ERP for driving routes
-        erp_data = None
-        if mode == "driving" and overview_polyline:
-            erp_data = calculate_erp(overview_polyline, departure_time=dt)
-            if erp_data:
-                cost_info["erp"] = erp_data["total"]
-                cost_info["erp_gantries"] = erp_data["gantries"]
-                cost_info["total"] = round(cost_info["total"] + erp_data["total"], 2)
-
         # Feature 2: Weather for all routes
         weather_data = None
         try:
@@ -156,17 +147,37 @@ def get_routes(
         except Exception:
             pass
 
-        candidates.append({
-            "category": "Taxi/Private Hire" if mode == "driving" else "Public Transit",
+        # Shared driving data (ERP + parking) computed once, used by both Taxi and Drive
+        erp_data = None
+        parking_data = None
+        if mode == "driving":
+            # Feature 3: ERP
+            if overview_polyline:
+                erp_data = calculate_erp(overview_polyline, departure_time=dt)
+            # Feature 6: Parking
+            try:
+                end_loc = leg.get("end_location") or {}
+                if end_loc.get("lat") and end_loc.get("lng"):
+                    parking_data = find_nearby_carparks(end_loc["lat"], end_loc["lng"])
+            except Exception:
+                pass
+
+        # Parking-based comfort penalty
+        effective_walk = round(walk_min, 1)
+        if parking_data and parking_data.get("status") == "full":
+            effective_walk = round(walk_min + 5, 1)
+        elif parking_data and parking_data.get("status") == "limited":
+            effective_walk = round(walk_min + 2, 1)
+
+        steps_dump = [s.model_dump() for s in route_steps]
+        shared = {
             "path_summary": path_summary or ("Drive" if mode == "driving" else ""),
             "time_min": time_min,
             "realistic_time_min": realistic_time_min,
-            "cost_est": cost_info["total"],
-            "cost_breakdown": cost_info,
             "distance_km": round(distance_m / 1000.0, 2),
-            "walk_min": round(walk_min, 1),
+            "walk_min": effective_walk if mode == "driving" else round(walk_min, 1),
             "transfers": transfers if mode != "driving" else 0,
-            "steps": [s.model_dump() for s in route_steps],
+            "steps": steps_dump,
             "overview_polyline": overview_polyline,
             "risk_crowding_cat": crowd_cat.value,
             "risk_crowding_num": crowd_num,
@@ -175,12 +186,59 @@ def get_routes(
             "risk_cat": max(crowd_cat.value, delay_cat.value, key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
             "uses_fallback": uses_fallback,
             "weather": weather_data,
-            "erp": erp_data,
-        })
+        }
+
+        if mode == "driving":
+            # --- Taxi candidate ---
+            taxi_cost = estimate_cost(distance_m, duration_s, "taxi")
+            if erp_data:
+                taxi_cost["erp"] = erp_data["total"]
+                taxi_cost["erp_gantries"] = erp_data["gantries"]
+                taxi_cost["total"] = round(taxi_cost["total"] + erp_data["total"], 2)
+            candidates.append({
+                **shared,
+                "category": "Taxi",
+                "cost_est": taxi_cost["total"],
+                "cost_breakdown": taxi_cost,
+                "erp": erp_data,
+                "parking": None,  # taxi doesn't need parking
+            })
+
+            # --- Own car (Drive) candidate ---
+            car_cost = estimate_cost(distance_m, duration_s, "owncar")
+            if erp_data:
+                car_cost["erp"] = erp_data["total"]
+                car_cost["erp_gantries"] = erp_data["gantries"]
+                car_cost["total"] = round(car_cost["total"] + erp_data["total"], 2)
+            candidates.append({
+                **shared,
+                "category": "Drive",
+                "cost_est": car_cost["total"],
+                "cost_breakdown": car_cost,
+                "erp": erp_data,
+                "parking": parking_data,
+            })
+        else:
+            # --- Transit candidate ---
+            transit_cost = estimate_cost(distance_m, duration_s, "transit")
+            candidates.append({
+                **shared,
+                "category": "Public Transit",
+                "cost_est": transit_cost["total"],
+                "cost_breakdown": transit_cost,
+                "erp": None,
+                "parking": None,
+            })
+      except Exception as exc:
+        import traceback
+        print(f"[WARN] Failed to process route (mode={r.get('requested_mode')}): {exc}")
+        traceback.print_exc()
+        continue
 
     # Deduplicate routes that use the same sequence of modes + stops
+    # Include category so Taxi and Drive (same route) are kept separate
     def _route_fingerprint(c):
-        parts = []
+        parts = [c.get("category", "")]
         for s in c.get("steps", []):
             parts.append(f"{s.get('mode', '')}|{s.get('line_name', '')}|{s.get('from_name', '')}|{s.get('to_name', '')}")
         return ">>".join(parts)
@@ -216,8 +274,26 @@ def get_routes(
 
     ranked = rank_routes(filtered, weights)
     add_explanations(ranked, weights)
-    # Select top 3 overall
-    top = ranked[:3]
+
+    # Select top results — ensure category diversity (transit + taxi + drive)
+    # so driving options aren't hidden when transit scores better
+    top = []
+    seen_cats = set()
+    # First pass: best of each category
+    for r in ranked:
+        cat = r.get("category", "")
+        if cat not in seen_cats:
+            top.append(r)
+            seen_cats.add(cat)
+    # Second pass: fill remaining slots up to 5 with next-best overall
+    for r in ranked:
+        if len(top) >= 5:
+            break
+        if r not in top:
+            top.append(r)
+    # Re-sort by score
+    top.sort(key=lambda r: r.get("score", 999))
+
     return RoutesResponse(trip=trip, routes=top)
 
 

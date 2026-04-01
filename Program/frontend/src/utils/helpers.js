@@ -84,6 +84,16 @@ export function frequencyLabel(freq) {
   return `Every ${min} min`;
 }
 
+// Parking status (Feature 6)
+export function parkingStatusClass(status) {
+  switch (status) {
+    case 'available': return 'bg-emerald-500/15 text-emerald-400';
+    case 'limited': return 'bg-amber-500/15 text-amber-400';
+    case 'full': return 'bg-red-500/15 text-red-400';
+    default: return 'bg-white/5 text-slate-400';
+  }
+}
+
 // Weather helpers (Feature 2)
 export function isRainy(weather) {
   return weather?.rain === true;
