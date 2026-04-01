@@ -15,6 +15,7 @@ from ..models.schemas import (
     CompareResponse,
     CrowdingHeatmapResponse,
     CrowdingInterval,
+    RiskCategory,
 )
 from ..services.caching import global_cache
 from ..models.schemas import DatasetStatus
@@ -162,59 +163,93 @@ def get_routes(
             except Exception:
                 pass
 
-        # Parking-based comfort penalty
-        effective_walk = round(walk_min, 1)
-        if parking_data and parking_data.get("status") == "full":
-            effective_walk = round(walk_min + 5, 1)
-        elif parking_data and parking_data.get("status") == "limited":
-            effective_walk = round(walk_min + 2, 1)
+        # Parking-based penalties for Drive candidates
+        # Time: add realistic parking search time
+        # Risk: parking scarcity increases delay risk
+        drive_time_penalty = 0
+        drive_delay_cat = delay_cat
+        drive_delay_num = delay_num
+        if parking_data:
+            p_status = parking_data.get("status", "available")
+            if p_status == "full":
+                drive_time_penalty = 10       # 10 min circling for parking
+                drive_delay_cat = max(drive_delay_cat, RiskCategory.high,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c.value if hasattr(c, 'value') else c, 2))
+                drive_delay_num = 3
+            elif p_status == "limited":
+                drive_time_penalty = 5        # 5 min finding a spot
+                drive_delay_cat = max(drive_delay_cat, RiskCategory.medium,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c.value if hasattr(c, 'value') else c, 2))
+                drive_delay_num = max(drive_delay_num, 2)
+            # Annotate the parking data with the penalty for frontend display
+            parking_data["time_penalty_min"] = drive_time_penalty
 
         steps_dump = [s.model_dump() for s in route_steps]
-        shared = {
+
+        # Shared fields for all candidate types from this Google route
+        shared_base = {
             "path_summary": path_summary or ("Drive" if mode == "driving" else ""),
             "time_min": time_min,
-            "realistic_time_min": realistic_time_min,
             "distance_km": round(distance_m / 1000.0, 2),
-            "walk_min": effective_walk if mode == "driving" else round(walk_min, 1),
+            "walk_min": round(walk_min, 1),
             "transfers": transfers if mode != "driving" else 0,
             "steps": steps_dump,
             "overview_polyline": overview_polyline,
             "risk_crowding_cat": crowd_cat.value,
             "risk_crowding_num": crowd_num,
-            "risk_delay_cat": delay_cat.value,
-            "risk_delay_num": delay_num,
-            "risk_cat": max(crowd_cat.value, delay_cat.value, key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
             "uses_fallback": uses_fallback,
             "weather": weather_data,
         }
 
         if mode == "driving":
-            # --- Taxi candidate ---
+            # --- Taxi candidate (no parking penalty — taxi drops you off) ---
             taxi_cost = estimate_cost(distance_m, duration_s, "taxi")
             if erp_data:
                 taxi_cost["erp"] = erp_data["total"]
                 taxi_cost["erp_gantries"] = erp_data["gantries"]
                 taxi_cost["total"] = round(taxi_cost["total"] + erp_data["total"], 2)
             candidates.append({
-                **shared,
+                **shared_base,
                 "category": "Taxi",
+                "realistic_time_min": realistic_time_min,
                 "cost_est": taxi_cost["total"],
                 "cost_breakdown": taxi_cost,
+                "risk_delay_cat": delay_cat.value,
+                "risk_delay_num": delay_num,
+                "risk_cat": max(crowd_cat.value, delay_cat.value,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
                 "erp": erp_data,
-                "parking": None,  # taxi doesn't need parking
+                "parking": None,
             })
 
-            # --- Own car (Drive) candidate ---
+            # --- Own car (Drive) candidate — parking penalties on time, risk, comfort ---
             car_cost = estimate_cost(distance_m, duration_s, "owncar")
             if erp_data:
                 car_cost["erp"] = erp_data["total"]
                 car_cost["erp_gantries"] = erp_data["gantries"]
                 car_cost["total"] = round(car_cost["total"] + erp_data["total"], 2)
+
+            # Time: add parking search penalty
+            drive_realistic = round(realistic_time_min + drive_time_penalty, 1)
+
+            # Comfort: inflate walk_min when parking is scarce (you walk further from carpark)
+            drive_walk = round(walk_min, 1)
+            if parking_data and parking_data.get("status") == "full":
+                drive_walk = round(walk_min + 5, 1)
+            elif parking_data and parking_data.get("status") == "limited":
+                drive_walk = round(walk_min + 2, 1)
+
             candidates.append({
-                **shared,
+                **shared_base,
                 "category": "Drive",
+                "realistic_time_min": drive_realistic,
+                "walk_min": drive_walk,
                 "cost_est": car_cost["total"],
                 "cost_breakdown": car_cost,
+                "risk_delay_cat": drive_delay_cat.value,
+                "risk_delay_num": drive_delay_num,
+                "risk_cat": max(crowd_cat.value, drive_delay_cat.value,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
                 "erp": erp_data,
                 "parking": parking_data,
             })
@@ -222,10 +257,15 @@ def get_routes(
             # --- Transit candidate ---
             transit_cost = estimate_cost(distance_m, duration_s, "transit")
             candidates.append({
-                **shared,
+                **shared_base,
                 "category": "Public Transit",
+                "realistic_time_min": realistic_time_min,
                 "cost_est": transit_cost["total"],
                 "cost_breakdown": transit_cost,
+                "risk_delay_cat": delay_cat.value,
+                "risk_delay_num": delay_num,
+                "risk_cat": max(crowd_cat.value, delay_cat.value,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
                 "erp": None,
                 "parking": None,
             })

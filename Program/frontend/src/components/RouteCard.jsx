@@ -83,12 +83,12 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
       )}
       {route.parking?.status === 'full' && (
         <div className="flex items-center gap-1.5 text-[10px] text-red-300 mb-1">
-          <ParkingCircle size={11} /> No parking available near destination
+          <ParkingCircle size={11} /> No parking near destination — est. +{route.parking.time_penalty_min || 10} min finding a spot
         </div>
       )}
       {route.parking?.status === 'limited' && (
         <div className="flex items-center gap-1.5 text-[10px] text-amber-300 mb-1">
-          <ParkingCircle size={11} /> Limited parking ({route.parking.total_available_lots} lots nearby)
+          <ParkingCircle size={11} /> Limited parking ({route.parking.total_available_lots} lots) — est. +{route.parking.time_penalty_min || 5} min
         </div>
       )}
 

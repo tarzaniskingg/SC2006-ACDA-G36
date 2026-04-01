@@ -17,7 +17,7 @@ def _haversine_m(lat1, lng1, lat2, lng2):
 def find_nearby_carparks(
     dest_lat: float,
     dest_lng: float,
-    radius_m: float = 500,
+    radius_m: float = 800,
     max_results: int = 5,
 ) -> Optional[Dict]:
     """
