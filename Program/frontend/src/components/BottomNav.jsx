@@ -9,7 +9,7 @@ const tabs = [
 
 export default function BottomNav({ hasResults }) {
   return (
-    <nav className="shrink-0 relative z-30 border-t border-white/[0.06] panel">
+    <nav className="shrink-0 relative z-30 border-t border-white/[0.06] panel" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       <div className="max-w-lg mx-auto flex justify-around items-center h-14">
         {tabs.map(({ to, icon: Icon, label }) => {
           if (to === '/scoring' && !hasResults) return (
