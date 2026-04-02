@@ -80,17 +80,15 @@ export async function fetchCrowdingHeatmap(stationName) {
 }
 
 /**
- * Geocode a place name to [lat, lng] using Nominatim (free, no API key).
- * Appends ", Singapore" for better results in SG context.
+ * Geocode a place name to [lat, lng] using OneMap (Singapore government API, free, no key).
  */
 export async function geocode(placeName) {
-  const query = encodeURIComponent(placeName + ', Singapore');
-  const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`,
-    { headers: { 'User-Agent': 'SGTravelBud/1.0' } }
-  );
+  const params = new URLSearchParams({
+    searchVal: placeName, returnGeom: 'Y', getAddrDetails: 'Y', pageNum: '1',
+  });
+  const res = await fetch(`https://www.onemap.gov.sg/api/common/elastic/search?${params}`);
   if (!res.ok) return null;
   const data = await res.json();
-  if (data.length === 0) return null;
-  return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  if (!data.results?.length) return null;
+  return [parseFloat(data.results[0].LATITUDE), parseFloat(data.results[0].LONGITUDE)];
 }

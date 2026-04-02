@@ -1,5 +1,6 @@
 import { Clock, DollarSign, Users, AlertTriangle, ChevronDown, ChevronUp, Footprints, Bus, TrainFront, Car, Ship, BarChart3, Receipt, CloudRain, Timer, ParkingCircle } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import RiskBadge from './RiskBadge';
 import { formatDuration, formatCost, modeColor, isRainy, parkingStatusClass } from '../utils/helpers';
 
@@ -10,10 +11,10 @@ function StepIcon({ mode }) {
   return <Icon size={14} style={{ color: modeColor(mode) }} />;
 }
 
-const rankLabels = ['Best', '2nd', '3rd'];
-
 export default function RouteCard({ route, rank, selected, onSelect, weights }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const rankLabels = [t('rank.best'), t('rank.2nd'), t('rank.3rd')];
 
   const cb = route.cost_breakdown;
   const isTaxi = cb?.mode === 'taxi';
@@ -71,24 +72,24 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
       {/* Inline warnings */}
       {isRainy(route.weather) && (
         <div className="flex items-center gap-1.5 text-[10px] text-blue-300 mb-1">
-          <CloudRain size={11} /> Rain expected along route
+          <CloudRain size={11} /> {t('route.rainWarning')}
         </div>
       )}
       {hasFreqWarning && (
         <div className="text-[10px] text-amber-300/80 mb-1">
           {route.steps.filter(s => s.bus_frequency?.frequency_cat === 'Low').map((s, i) => (
-            <span key={i} className="flex items-center gap-1"><Timer size={10} /> Bus {s.line_name} every {s.bus_frequency.frequency_min}min</span>
+            <span key={i} className="flex items-center gap-1"><Timer size={10} /> Bus {s.line_name} {t('freq.every', { min: s.bus_frequency.frequency_min })}</span>
           ))}
         </div>
       )}
       {route.parking?.status === 'full' && (
         <div className="flex items-center gap-1.5 text-[10px] text-red-300 mb-1">
-          <ParkingCircle size={11} /> No parking near destination — est. +{route.parking.time_penalty_min || 10} min finding a spot
+          <ParkingCircle size={11} /> {t('route.noParking')} — {t('route.estFindSpot', { min: route.parking.time_penalty_min || 10 })}
         </div>
       )}
       {route.parking?.status === 'limited' && (
         <div className="flex items-center gap-1.5 text-[10px] text-amber-300 mb-1">
-          <ParkingCircle size={11} /> Limited parking ({route.parking.total_available_lots} lots) — est. +{route.parking.time_penalty_min || 5} min
+          <ParkingCircle size={11} /> {t('route.limitedParking', { lots: route.parking.total_available_lots })} — {t('route.estTime', { min: route.parking.time_penalty_min || 5 })}
         </div>
       )}
 
@@ -101,7 +102,7 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
       <button onClick={e => { e.stopPropagation(); setExpanded(!expanded); }}
         className="flex items-center gap-1 text-[10px] text-amber-400/70 font-medium font-display hover:text-amber-300 transition-colors">
         {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-        {expanded ? 'Less' : 'Details'}
+        {expanded ? t('route.less') : t('route.details')}
       </button>
 
       {expanded && (
@@ -116,7 +117,7 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
                   {step.line_name && (
                     <span className="text-[10px] bg-white/[0.06] px-1.5 py-0.5 rounded font-mono text-slate-400">{step.line_name}</span>
                   )}
-                  {step.num_stops && <span className="text-[10px] text-slate-500">{step.num_stops} stops</span>}
+                  {step.num_stops && <span className="text-[10px] text-slate-500">{t('route.stops', { count: step.num_stops })}</span>}
                 </div>
                 <div className="text-[10px] text-slate-500 mt-0.5">
                   {step.from_name && step.to_name && <span>{step.from_name} &rarr; {step.to_name}</span>}
@@ -128,7 +129,7 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
                     {step.delay && <RiskBadge category={step.delay.category} label="delay" />}
                     {step.bus_frequency && (
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold freq-${step.bus_frequency.frequency_cat.toLowerCase()}`}>
-                        Every {step.bus_frequency.frequency_min}min
+                        {t('freq.every', { min: step.bus_frequency.frequency_min })}
                       </span>
                     )}
                   </div>
@@ -140,31 +141,31 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
           {/* Fare */}
           <div className="bg-white/[0.03] rounded-xl p-2.5 border border-white/[0.05]">
             <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-display flex items-center gap-1 mb-1.5">
-              <Receipt size={10} /> Fare
+              <Receipt size={10} /> {t('fare.title')}
             </h4>
             {cb && (
               <div className="space-y-0.5 text-[11px]">
                 {isTaxi ? (
                   <>
-                    <div className="flex justify-between"><span className="text-slate-400">Flag down</span><span className="font-mono text-slate-300">${cb.flag_down?.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-400">Distance ({cb.distance_km}km)</span><span className="font-mono text-slate-300">${cb.distance_charge?.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-400">Waiting</span><span className="font-mono text-slate-300">${cb.waiting_charge?.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-400">{t('fare.flagDown')}</span><span className="font-mono text-slate-300">${cb.flag_down?.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-400">{t('fare.distance')} ({cb.distance_km}km)</span><span className="font-mono text-slate-300">${cb.distance_charge?.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-400">{t('fare.waiting')}</span><span className="font-mono text-slate-300">${cb.waiting_charge?.toFixed(2)}</span></div>
                     {cb.erp > 0 && (
-                      <div className="flex justify-between text-amber-400"><span>ERP</span><span className="font-mono">${cb.erp?.toFixed(2)}</span></div>
+                      <div className="flex justify-between text-amber-400"><span>{t('fare.erp')}</span><span className="font-mono">${cb.erp?.toFixed(2)}</span></div>
                     )}
                   </>
                 ) : isOwnCar ? (
                   <>
-                    <div className="flex justify-between"><span className="text-slate-400">Fuel ({cb.distance_km}km)</span><span className="font-mono text-slate-300">${cb.fuel_cost?.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-400">{t('fare.fuel')} ({cb.distance_km}km)</span><span className="font-mono text-slate-300">${cb.fuel_cost?.toFixed(2)}</span></div>
                     {cb.erp > 0 && (
-                      <div className="flex justify-between text-amber-400"><span>ERP</span><span className="font-mono">${cb.erp?.toFixed(2)}</span></div>
+                      <div className="flex justify-between text-amber-400"><span>{t('fare.erp')}</span><span className="font-mono">${cb.erp?.toFixed(2)}</span></div>
                     )}
                   </>
                 ) : (
-                  <div className="flex justify-between"><span className="text-slate-400">Card fare ({cb.distance_km}km)</span><span className="font-mono text-slate-300">${cb.base_fare?.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">{t('fare.cardFare')} ({cb.distance_km}km)</span><span className="font-mono text-slate-300">${cb.base_fare?.toFixed(2)}</span></div>
                 )}
                 <div className="flex justify-between pt-1 border-t border-white/[0.06] font-semibold">
-                  <span className="text-slate-200 font-display">Total</span>
+                  <span className="text-slate-200 font-display">{t('fare.total')}</span>
                   <span className="font-mono text-white">{formatCost(route.cost_est)}</span>
                 </div>
               </div>
@@ -175,14 +176,14 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
           {route.parking && (
             <div className="bg-white/[0.03] rounded-xl p-2.5 border border-white/[0.05]">
               <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-display flex items-center gap-1 mb-1.5">
-                <ParkingCircle size={10} /> Parking Near Destination
+                <ParkingCircle size={10} /> {t('parking.title')}
               </h4>
               <div className="flex items-center gap-2 mb-1.5">
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${parkingStatusClass(route.parking.status)}`}>
-                  {route.parking.status === 'full' ? 'Full' : route.parking.status === 'limited' ? 'Limited' : 'Available'}
+                  {route.parking.status === 'full' ? t('parking.full') : route.parking.status === 'limited' ? t('parking.limited') : t('parking.available')}
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  {route.parking.total_available_lots} lots across {route.parking.nearby_count} carpark{route.parking.nearby_count !== 1 ? 's' : ''}
+                  {t('parking.lotsAcross', { lots: route.parking.total_available_lots, count: route.parking.nearby_count })}
                 </span>
               </div>
               <div className="space-y-0.5">
@@ -191,7 +192,7 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
                     <span className="text-slate-400 truncate flex-1 mr-2">{cp.name}</span>
                     <span className="text-slate-500 shrink-0 mr-2">{cp.distance_m}m</span>
                     <span className={`font-mono shrink-0 ${cp.available_lots === 0 ? 'text-red-400' : cp.available_lots <= 10 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                      {cp.available_lots} lots
+                      {cp.available_lots} {t('parking.lots')}
                     </span>
                   </div>
                 ))}
@@ -202,14 +203,14 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
           {/* Score mini-breakdown */}
           <div className="bg-white/[0.03] rounded-xl p-2.5 border border-white/[0.05]">
             <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-display flex items-center gap-1 mb-1.5">
-              <BarChart3 size={10} /> Score
+              <BarChart3 size={10} /> {t('score.title')}
             </h4>
             <div className="grid grid-cols-4 gap-1.5 text-center">
               {[
-                { k: 'normalized_time', l: 'Time', c: 'text-blue-400' },
-                { k: 'normalized_cost', l: 'Cost', c: 'text-emerald-400' },
-                { k: 'normalized_risk', l: 'Risk', c: 'text-red-400' },
-                { k: 'normalized_comfort', l: 'Comfort', c: 'text-purple-400' },
+                { k: 'normalized_time', l: t('weight.time'), c: 'text-blue-400' },
+                { k: 'normalized_cost', l: t('weight.cost'), c: 'text-emerald-400' },
+                { k: 'normalized_risk', l: t('weight.risk'), c: 'text-red-400' },
+                { k: 'normalized_comfort', l: t('weight.comfort'), c: 'text-purple-400' },
               ].map(({ k, l, c }) => (
                 <div key={k}>
                   <div className={`text-[12px] font-bold font-display ${c}`}>{(route[k] ?? 0).toFixed(2)}</div>
@@ -219,7 +220,7 @@ export default function RouteCard({ route, rank, selected, onSelect, weights }) 
             </div>
             <div className="text-center mt-1.5 pt-1 border-t border-white/[0.05]">
               <span className="text-[13px] font-bold text-amber-400 font-display">{route.score?.toFixed(3)}</span>
-              <span className="text-[9px] text-slate-500 ml-1">composite</span>
+              <span className="text-[9px] text-slate-500 ml-1">{t('score.composite')}</span>
             </div>
           </div>
         </div>

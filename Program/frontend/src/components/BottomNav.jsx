@@ -1,13 +1,14 @@
 import { NavLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { MapPin, BarChart3, Settings } from 'lucide-react';
 
-const tabs = [
-  { to: '/', icon: MapPin, label: 'Explore' },
-  { to: '/scoring', icon: BarChart3, label: 'Scoring' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-];
-
 export default function BottomNav({ hasResults }) {
+  const { t } = useTranslation();
+  const tabs = [
+    { to: '/', icon: MapPin, label: t('nav.explore') },
+    { to: '/scoring', icon: BarChart3, label: t('nav.scoring') },
+    { to: '/settings', icon: Settings, label: t('nav.settings') },
+  ];
   return (
     <nav className="shrink-0 relative z-30 border-t border-white/[0.06] panel" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       <div className="max-w-lg mx-auto flex justify-around items-center h-14">

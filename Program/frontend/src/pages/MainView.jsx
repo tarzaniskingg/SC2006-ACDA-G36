@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, X, Loader2, ChevronUp, ChevronDown, RefreshCw, ArrowUpDown, Bus, Car, SlidersHorizontal, Footprints, ArrowLeftRight, Clock } from 'lucide-react';
 import RouteMap from '../components/RouteMap';
 import RouteCard from '../components/RouteCard';
@@ -11,6 +12,7 @@ const SHEET_PEEK = 0;
 const SHEET_RESULTS = 1;
 
 export default function MainView({ results, query, selectedRoute, onSelectRoute, onResults, onRefresh, initialForm }) {
+  const { t } = useTranslation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [sheetState, setSheetState] = useState(results?.routes?.length ? SHEET_RESULTS : SHEET_PEEK);
 
@@ -109,10 +111,10 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
             {query ? (
               <div className="flex-1 min-w-0 text-left">
                 <span className="text-[13px] text-white font-medium font-display truncate block">{query.origin}</span>
-                <span className="text-[11px] text-slate-400 truncate block">to {query.destination}</span>
+                <span className="text-[11px] text-slate-400 truncate block">{t('search.toPrefix')} {query.destination}</span>
               </div>
             ) : (
-              <span className="text-[13px] text-slate-400 font-display">Where are you going?</span>
+              <span className="text-[13px] text-slate-400 font-display">{t('search.whereGoing')}</span>
             )}
           </button>
         </div>
@@ -125,7 +127,7 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
             <button onClick={() => setSearchOpen(false)} className="p-2 rounded-xl hover:bg-white/[0.06] transition-colors">
               <X size={20} className="text-slate-400" />
             </button>
-            <h2 className="text-base font-semibold text-white font-display flex-1">Plan Route</h2>
+            <h2 className="text-base font-semibold text-white font-display flex-1">{t('search.planRoute')}</h2>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-4">
@@ -133,25 +135,25 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
               {/* Origin / Destination with swap button between them */}
               <div className="glass rounded-2xl p-3 relative">
                 <PlaceInput value={origin} onChange={setOrigin}
-                  placeholder="Origin" dotColor="bg-emerald-400 ring-2 ring-emerald-400/20" />
+                  placeholder={t('search.origin')} dotColor="bg-emerald-400 ring-2 ring-emerald-400/20" />
                 <div className="flex items-center my-1.5">
                   <div className="flex-1 h-px bg-white/[0.06]" />
                   <button onClick={swapPlaces}
                     className="mx-2 p-1 rounded-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] transition-colors"
-                    title="Swap origin and destination">
+                    title={t('search.swapTooltip')}>
                     <ArrowUpDown size={12} className="text-slate-400" />
                   </button>
                   <div className="flex-1 h-px bg-white/[0.06]" />
                 </div>
                 <PlaceInput value={destination} onChange={setDestination}
-                  placeholder="Destination" dotColor="bg-red-400 ring-2 ring-red-400/20" />
+                  placeholder={t('search.destination')} dotColor="bg-red-400 ring-2 ring-red-400/20" />
               </div>
 
               {/* Mode toggles */}
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { key: 'transit', label: 'Public Transit', icon: Bus },
-                  { key: 'driving', label: 'Taxi / Drive', icon: Car },
+                  { key: 'transit', label: t('mode.transit'), icon: Bus },
+                  { key: 'driving', label: t('mode.driving'), icon: Car },
                 ].map(({ key, label, icon: Icon }) => (
                   <button key={key} type="button" onClick={() => toggleMode(key)}
                     className={`flex items-center gap-2.5 py-3 px-3.5 rounded-xl transition-all text-left border
@@ -168,16 +170,16 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
               <button onClick={() => setShowAdvanced(!showAdvanced)}
                 className="flex items-center gap-1.5 text-[11px] text-slate-500 font-display mx-auto hover:text-slate-300 transition-colors">
                 <SlidersHorizontal size={12} />
-                {showAdvanced ? 'Hide' : 'Show'} priorities & constraints
+                {showAdvanced ? t('advanced.hide') : t('advanced.show')}
               </button>
 
               {showAdvanced && (
                 <div className="space-y-3 anim-fade-up">
                   <div className="glass rounded-xl p-3 space-y-3">
-                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-display">Priorities</span>
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-display">{t('advanced.priorities')}</span>
                     {['time', 'cost', 'risk', 'comfort'].map(key => (
                       <div key={key} className="flex items-center gap-2">
-                        <span className="text-[11px] text-slate-400 w-14 capitalize">{key}</span>
+                        <span className="text-[11px] text-slate-400 w-14 capitalize">{t(`weight.${key}`)}</span>
                         <input type="range" min="0" max="1" step="0.05" value={weights[key]}
                           onChange={e => setWeights(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
                           className="flex-1" />
@@ -186,23 +188,23 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
                     ))}
                   </div>
                   <div className="glass rounded-xl p-3 space-y-2">
-                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-display">Constraints</span>
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-display">{t('advanced.constraints')}</span>
                     <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="text-[9px] text-slate-500 mb-0.5 block"><Footprints size={9} className="inline" /> Walk</label>
-                        <input type="number" min="1" max="60" placeholder="Any" value={constraints.max_walk_min}
+                        <label className="text-[9px] text-slate-500 mb-0.5 block"><Footprints size={9} className="inline" /> {t('constraint.walk')}</label>
+                        <input type="number" min="1" max="60" placeholder={t('constraint.any')} value={constraints.max_walk_min}
                           onChange={e => setConstraints(p => ({ ...p, max_walk_min: e.target.value }))}
                           className="input-dark w-full px-2 py-1.5 rounded-lg text-[11px]" />
                       </div>
                       <div>
-                        <label className="text-[9px] text-slate-500 mb-0.5 block"><ArrowLeftRight size={9} className="inline" /> Transfers</label>
-                        <input type="number" min="0" max="10" placeholder="Any" value={constraints.max_transfers}
+                        <label className="text-[9px] text-slate-500 mb-0.5 block"><ArrowLeftRight size={9} className="inline" /> {t('constraint.transfers')}</label>
+                        <input type="number" min="0" max="10" placeholder={t('constraint.any')} value={constraints.max_transfers}
                           onChange={e => setConstraints(p => ({ ...p, max_transfers: e.target.value }))}
                           className="input-dark w-full px-2 py-1.5 rounded-lg text-[11px]" />
                       </div>
                       <div>
-                        <label className="text-[9px] text-slate-500 mb-0.5 block">Budget</label>
-                        <input type="number" min="0.5" step="0.5" placeholder="Any" value={constraints.max_budget}
+                        <label className="text-[9px] text-slate-500 mb-0.5 block">{t('constraint.budget')}</label>
+                        <input type="number" min="0.5" step="0.5" placeholder={t('constraint.any')} value={constraints.max_budget}
                           onChange={e => setConstraints(p => ({ ...p, max_budget: e.target.value }))}
                           className="input-dark w-full px-2 py-1.5 rounded-lg text-[11px]" />
                       </div>
@@ -217,7 +219,7 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
 
               <button onClick={handleSearch} disabled={!canSearch}
                 className="w-full btn-accent py-3 rounded-xl text-[13px] flex items-center justify-center gap-2">
-                {loading ? <><Loader2 size={16} className="animate-spin" /> Searching...</> : <><Search size={16} /> Find Routes</>}
+                {loading ? <><Loader2 size={16} className="animate-spin" /> {t('search.searching')}</> : <><Search size={16} /> {t('search.findRoutes')}</>}
               </button>
             </div>
           </div>
@@ -239,10 +241,10 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
           <div className="flex items-center gap-2 px-4 pb-2 shrink-0">
             <div className="flex-1 min-w-0">
               <span className="text-[13px] font-semibold text-white font-display">
-                {routes.length} route{routes.length !== 1 ? 's' : ''}
+                {t('results.routeCount', { count: routes.length })}
               </span>
               <span className="text-[11px] text-slate-500 ml-2 font-display">
-                Best: {formatDuration(routes[0]?.time_min)} &middot; {formatCost(routes[0]?.cost_est)}
+                {t('results.best')}: {formatDuration(routes[0]?.time_min)} &middot; {formatCost(routes[0]?.cost_est)}
               </span>
             </div>
             <button onClick={handleRefresh} disabled={refreshing}
@@ -265,8 +267,8 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
               <button onClick={handleCompare} disabled={compareLoading}
                 className="w-full btn-ghost py-2 rounded-xl text-[11px] font-display font-medium flex items-center justify-center gap-1.5 shrink-0">
                 {compareLoading
-                  ? <><Loader2 size={12} className="animate-spin" /> Comparing...</>
-                  : <><Clock size={12} /> Compare Departure Times</>}
+                  ? <><Loader2 size={12} className="animate-spin" /> {t('results.comparing')}</>
+                  : <><Clock size={12} /> {t('results.compareDepart')}</>}
               </button>
 
               {routes.map((route, i) => (

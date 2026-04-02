@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { BarChart3, Clock, AlertTriangle, DollarSign, Heart, Info, ArrowRight } from 'lucide-react';
 import { formatDuration, formatCost, riskBadgeClass } from '../utils/helpers';
 import CrowdingHeatmap from '../components/CrowdingHeatmap';
 
 const DIMENSIONS = [
-  { key: 'time', normKey: 'normalized_time', label: 'Time', icon: Clock, color: 'bg-blue-400', lightBg: 'bg-blue-500/10' },
-  { key: 'cost', normKey: 'normalized_cost', label: 'Cost', icon: DollarSign, color: 'bg-emerald-400', lightBg: 'bg-emerald-500/10' },
-  { key: 'risk', normKey: 'normalized_risk', label: 'Risk', icon: AlertTriangle, color: 'bg-red-400', lightBg: 'bg-red-500/10' },
-  { key: 'comfort', normKey: 'normalized_comfort', label: 'Comfort', icon: Heart, color: 'bg-purple-400', lightBg: 'bg-purple-500/10' },
+  { key: 'time', normKey: 'normalized_time', labelKey: 'weight.time', icon: Clock, color: 'bg-blue-400', lightBg: 'bg-blue-500/10' },
+  { key: 'cost', normKey: 'normalized_cost', labelKey: 'weight.cost', icon: DollarSign, color: 'bg-emerald-400', lightBg: 'bg-emerald-500/10' },
+  { key: 'risk', normKey: 'normalized_risk', labelKey: 'weight.risk', icon: AlertTriangle, color: 'bg-red-400', lightBg: 'bg-red-500/10' },
+  { key: 'comfort', normKey: 'normalized_comfort', labelKey: 'weight.comfort', icon: Heart, color: 'bg-purple-400', lightBg: 'bg-purple-500/10' },
 ];
 
 function ScoreBar({ value, color, label }) {
@@ -23,8 +24,8 @@ function ScoreBar({ value, color, label }) {
   );
 }
 
-function RouteScoreCard({ route, rank, weights }) {
-  const rankLabels = ['Best', '2nd', '3rd'];
+function RouteScoreCard({ route, rank, weights, t }) {
+  const rankLabels = [t('rank.best'), t('rank.2nd'), t('rank.3rd')];
   const rankStyles = [
     'bg-gradient-to-r from-amber-500 to-amber-600 text-black',
     'bg-white/10 text-slate-300',
@@ -34,7 +35,7 @@ function RouteScoreCard({ route, rank, weights }) {
   const contributions = DIMENSIONS.map(d => {
     const norm = route[d.normKey] ?? 0;
     const w = weights?.[d.key] ?? 0.25;
-    return { ...d, norm, weight: w, contribution: norm * w };
+    return { ...d, label: t(d.labelKey), norm, weight: w, contribution: norm * w };
   });
   const totalScore = route.score ?? contributions.reduce((s, c) => s + c.contribution, 0);
 
@@ -49,7 +50,7 @@ function RouteScoreCard({ route, rank, weights }) {
         </div>
         <div className="text-right">
           <span className="text-lg font-bold text-white font-display">{totalScore.toFixed(3)}</span>
-          <span className="text-[10px] text-slate-500 ml-1">score</span>
+          <span className="text-[10px] text-slate-500 ml-1">{t('score.scoreLabel').toLowerCase()}</span>
         </div>
       </div>
 
@@ -57,7 +58,7 @@ function RouteScoreCard({ route, rank, weights }) {
       <div className="flex items-center gap-4 text-[11px] text-slate-400 bg-white/[0.03] rounded-xl px-3 py-2 border border-white/[0.06]">
         <span>{formatDuration(route.time_min)}</span>
         <span>{formatCost(route.cost_est)}</span>
-        <span>{route.transfers} transfer{route.transfers !== 1 ? 's' : ''}</span>
+        <span>{t('score.transfer', { count: route.transfers })}</span>
         <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 ${riskBadgeClass(route.risk_crowding_cat)}`}>
           {route.risk_crowding_cat}
         </span>
@@ -65,7 +66,7 @@ function RouteScoreCard({ route, rank, weights }) {
 
       {/* Normalized */}
       <div>
-        <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 font-display">Normalized (0 = best, 1 = worst)</h4>
+        <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 font-display">{t('score.normalized')}</h4>
         <div className="space-y-2">
           {contributions.map(c => <ScoreBar key={c.key} value={c.norm} color={c.color} label={c.label} />)}
         </div>
@@ -73,7 +74,7 @@ function RouteScoreCard({ route, rank, weights }) {
 
       {/* Weighted */}
       <div>
-        <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 font-display">Weighted Contribution</h4>
+        <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 font-display">{t('score.weightedContrib')}</h4>
         <div className="grid grid-cols-4 gap-2">
           {contributions.map(c => {
             const Icon = c.icon;
@@ -110,6 +111,7 @@ function RouteScoreCard({ route, rank, weights }) {
 }
 
 export default function ScoringPage({ results, query }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const routes = results?.routes || [];
   const trip = results?.trip;
@@ -124,10 +126,10 @@ export default function ScoringPage({ results, query }) {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl glass mb-4">
             <BarChart3 size={28} className="text-slate-500" />
           </div>
-          <h2 className="text-lg font-semibold text-slate-200 mb-1 font-display">No scoring data</h2>
-          <p className="text-sm text-slate-500 mb-4">Search for routes first</p>
+          <h2 className="text-lg font-semibold text-slate-200 mb-1 font-display">{t('score.noData')}</h2>
+          <p className="text-sm text-slate-500 mb-4">{t('score.searchFirst')}</p>
           <button onClick={() => navigate('/')} className="btn-primary py-2.5 px-5 rounded-xl text-sm font-display">
-            Search Routes
+            {t('results.searchRoutes')}
           </button>
         </div>
       </div>
@@ -140,7 +142,7 @@ export default function ScoringPage({ results, query }) {
       <div className="animate-fade-up">
         <h1 className="text-xl font-bold text-white flex items-center gap-2 font-display">
           <BarChart3 size={20} className="text-amber-400" />
-          Scoring Breakdown
+          {t('score.breakdown')}
         </h1>
         <p className="text-[11px] text-slate-500 mt-1 font-display">
           {query?.origin} <ArrowRight size={10} className="inline text-slate-600" /> {query?.destination}
@@ -151,20 +153,20 @@ export default function ScoringPage({ results, query }) {
       <div className="bg-amber-500/[0.06] border border-amber-500/15 rounded-2xl p-4 space-y-2 animate-fade-up delay-1">
         <div className="flex items-center gap-2">
           <Info size={15} className="text-amber-400 shrink-0" />
-          <h3 className="text-sm font-semibold text-amber-200 font-display">How Scoring Works</h3>
+          <h3 className="text-sm font-semibold text-amber-200 font-display">{t('score.howWorks')}</h3>
         </div>
         <div className="text-[11px] text-amber-200/70 space-y-1.5">
-          <p><strong className="text-amber-200">1. Normalize:</strong> Each metric scaled 0-1 across candidates. 0 = best, 1 = worst.</p>
-          <p><strong className="text-amber-200">2. Risk</strong> = max(crowding, delay). <strong className="text-amber-200">Comfort</strong> = 60% walk + 40% transfers.</p>
-          <p><strong className="text-amber-200">3. Weight:</strong> Multiply each by your chosen weight.</p>
-          <p><strong className="text-amber-200">4. Sum:</strong> Add weighted values. <strong className="text-amber-200">Lower = better.</strong></p>
-          <p><strong className="text-amber-200">5. Tie-break:</strong> risk &rarr; comfort &rarr; time &rarr; cost.</p>
+          <p><strong className="text-amber-200">1. {t('score.normalize')}</strong> {t('score.normDesc')}</p>
+          <p><strong className="text-amber-200">2. </strong>{t('score.riskDesc')}</p>
+          <p><strong className="text-amber-200">3. </strong>{t('score.weightDesc')}</p>
+          <p><strong className="text-amber-200">4. </strong>{t('score.sumDesc')}</p>
+          <p><strong className="text-amber-200">5. </strong>{t('score.tieBreak')}</p>
         </div>
       </div>
 
       {/* Active weights */}
       <div className="glass rounded-2xl p-4 animate-fade-up delay-2">
-        <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3 font-display">Active Weights</h3>
+        <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3 font-display">{t('score.activeWeights')}</h3>
         <div className="grid grid-cols-4 gap-2">
           {DIMENSIONS.map(d => {
             const Icon = d.icon;
@@ -173,7 +175,7 @@ export default function ScoringPage({ results, query }) {
               <div key={d.key} className="text-center">
                 <Icon size={17} className="mx-auto mb-1 text-slate-400" />
                 <div className="text-sm font-bold text-white font-display">{w.toFixed(2)}</div>
-                <div className="text-[10px] text-slate-500 font-display">{d.label}</div>
+                <div className="text-[10px] text-slate-500 font-display">{t(d.labelKey)}</div>
               </div>
             );
           })}
@@ -183,27 +185,27 @@ export default function ScoringPage({ results, query }) {
       {/* Comparison table */}
       {routes.length > 1 && (
         <div className="glass rounded-2xl p-4 overflow-x-auto animate-fade-up delay-3">
-          <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3 font-display">Route Comparison</h3>
+          <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3 font-display">{t('score.routeComparison')}</h3>
           <table className="w-full text-[11px]">
             <thead>
               <tr className="border-b border-white/[0.06]">
-                <th className="text-left py-2 pr-2 text-slate-500 font-medium font-display">Metric</th>
+                <th className="text-left py-2 pr-2 text-slate-500 font-medium font-display">{t('score.metric')}</th>
                 {routes.map((_, i) => (
                   <th key={i} className="text-center py-2 px-2 text-slate-500 font-medium font-display">
-                    {['Best', '2nd', '3rd'][i] || `#${i + 1}`}
+                    {[t('rank.best'), t('rank.2nd'), t('rank.3rd')][i] || `#${i + 1}`}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-white/[0.04]">
-                <td className="py-2 pr-2 text-slate-400">Time (Google)</td>
+                <td className="py-2 pr-2 text-slate-400">{t('score.timeGoogle')}</td>
                 {routes.map((r, i) => (
                   <td key={i} className="text-center py-2 px-2 font-mono text-slate-300">{formatDuration(r.time_min)}</td>
                 ))}
               </tr>
               <tr className="border-b border-white/[0.04]">
-                <td className="py-2 pr-2 text-slate-400">Realistic Time</td>
+                <td className="py-2 pr-2 text-slate-400">{t('score.realisticTime')}</td>
                 {routes.map((r, i) => (
                   <td key={i} className={`text-center py-2 px-2 font-mono ${r.realistic_time_min > r.time_min ? 'text-amber-400 font-semibold' : 'text-slate-300'}`}>
                     {r.realistic_time_min != null ? formatDuration(r.realistic_time_min) : formatDuration(r.time_min)}
@@ -211,13 +213,13 @@ export default function ScoringPage({ results, query }) {
                 ))}
               </tr>
               <tr className="border-b border-white/[0.04]">
-                <td className="py-2 pr-2 text-slate-400">Cost</td>
+                <td className="py-2 pr-2 text-slate-400">{t('score.costLabel')}</td>
                 {routes.map((r, i) => (
                   <td key={i} className="text-center py-2 px-2 font-mono text-slate-300">{formatCost(r.cost_est)}</td>
                 ))}
               </tr>
               <tr className="border-b border-white/[0.04]">
-                <td className="py-2 pr-2 text-slate-400">Crowding</td>
+                <td className="py-2 pr-2 text-slate-400">{t('score.crowding')}</td>
                 {routes.map((r, i) => (
                   <td key={i} className="text-center py-2 px-2">
                     <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 ${riskBadgeClass(r.risk_crowding_cat)}`}>
@@ -227,7 +229,7 @@ export default function ScoringPage({ results, query }) {
                 ))}
               </tr>
               <tr className="border-b border-white/[0.04]">
-                <td className="py-2 pr-2 text-slate-400">Delay</td>
+                <td className="py-2 pr-2 text-slate-400">{t('score.delay')}</td>
                 {routes.map((r, i) => (
                   <td key={i} className="text-center py-2 px-2">
                     <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 ${riskBadgeClass(r.risk_delay_cat)}`}>
@@ -237,13 +239,13 @@ export default function ScoringPage({ results, query }) {
                 ))}
               </tr>
               <tr className="border-b border-white/[0.04]">
-                <td className="py-2 pr-2 text-slate-400">Transfers</td>
+                <td className="py-2 pr-2 text-slate-400">{t('score.transfersLabel')}</td>
                 {routes.map((r, i) => (
                   <td key={i} className="text-center py-2 px-2 font-mono text-slate-300">{r.transfers}</td>
                 ))}
               </tr>
               <tr className="bg-amber-500/5">
-                <td className="py-2 pr-2 text-white font-semibold font-display">Score</td>
+                <td className="py-2 pr-2 text-white font-semibold font-display">{t('score.scoreLabel')}</td>
                 {routes.map((r, i) => (
                   <td key={i} className="text-center py-2 px-2 font-mono font-bold text-amber-400">{r.score?.toFixed(3)}</td>
                 ))}
@@ -268,12 +270,12 @@ export default function ScoringPage({ results, query }) {
         if (!stationNames.length) return null;
         return (
           <div className="glass rounded-2xl p-4 space-y-3 animate-fade-up delay-4">
-            <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-display">Peak Hour Crowding</h3>
-            <p className="text-[10px] text-slate-500">MRT crowding levels throughout the day</p>
+            <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-display">{t('score.peakCrowding')}</h3>
+            <p className="text-[10px] text-slate-500">{t('score.crowdingDesc')}</p>
             <div className="flex gap-3 mb-1 text-[9px] text-slate-500">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500" /> Low</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-500" /> Medium</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-500" /> High</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500" /> {t('risk.low')}</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-500" /> {t('risk.medium')}</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-500" /> {t('risk.high')}</span>
             </div>
             <div className="space-y-3">
               {stationNames.map((name, i) => <CrowdingHeatmap key={i} stationName={name} />)}
@@ -283,9 +285,9 @@ export default function ScoringPage({ results, query }) {
       })()}
 
       {/* Detailed breakdowns */}
-      <h3 className="text-sm font-semibold text-slate-200 pt-2 font-display">Detailed Breakdown</h3>
+      <h3 className="text-sm font-semibold text-slate-200 pt-2 font-display">{t('score.detailedBreakdown')}</h3>
       {routes.map((route, i) => (
-        <RouteScoreCard key={i} route={route} rank={i} weights={weights} />
+        <RouteScoreCard key={i} route={route} rank={i} weights={weights} t={t} />
       ))}
     </div>
   );

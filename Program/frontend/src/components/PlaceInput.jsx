@@ -5,9 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import { TILE_URL, TILE_ATTR } from './mapTiles';
 
 const DEBOUNCE_MS = 300;
-const NOM_BASE = 'https://nominatim.openstreetmap.org/search';
-const NOM_OPTS = { headers: { 'User-Agent': 'SGTravelBud/1.0' } };
-const SG_CENTER = [1.3521, 103.8198];
+const ONEMAP_BASE = 'https://www.onemap.gov.sg/api/common/elastic/search';
 
 const pinIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -16,41 +14,45 @@ const pinIcon = new L.Icon({
   iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
 });
 
-async function nominatimSearch(q) {
+async function onemapSearch(q) {
   const params = new URLSearchParams({
-    q, format: 'json', limit: '5', countrycodes: 'sg', addressdetails: '1',
+    searchVal: q, returnGeom: 'Y', getAddrDetails: 'Y', pageNum: '1',
   });
-  const res = await fetch(`${NOM_BASE}?${params}`, NOM_OPTS);
-  return res.ok ? res.json() : [];
+  const res = await fetch(`${ONEMAP_BASE}?${params}`);
+  if (!res.ok) return [];
+  const json = await res.json();
+  return json.results || [];
 }
 
 function parseResults(data) {
-  return data.map(item => {
-    const addr = item.address || {};
-    const parts = [];
-    const road = addr.road || addr.pedestrian || addr.footway || '';
-    const poiName = item.name || '';
-    const isNameUseful = poiName && poiName !== road && !/^\d+$/.test(poiName);
-    if (isNameUseful) {
-      parts.push(poiName);
-      if (road) parts.push(road);
-    } else if (addr.house_number && road) {
-      parts.push(`${addr.house_number} ${road}`);
+  return data.slice(0, 5).map(item => {
+    const building = item.BUILDING && item.BUILDING !== 'NIL' ? item.BUILDING : '';
+    const blk = item.BLK_NO && item.BLK_NO !== 'NIL' ? item.BLK_NO : '';
+    const road = item.ROAD_NAME && item.ROAD_NAME !== 'NIL' ? item.ROAD_NAME : '';
+    const postal = item.POSTAL && item.POSTAL !== 'NIL' ? item.POSTAL : '';
+
+    let title, subtitle;
+    if (building) {
+      title = building;
+      subtitle = blk && road ? `${blk} ${road}` : road || postal;
+    } else if (blk && road) {
+      title = `${blk} ${road}`;
+      subtitle = postal ? `S(${postal})` : '';
     } else if (road) {
-      parts.push(road);
+      title = road;
+      subtitle = postal ? `S(${postal})` : '';
+    } else {
+      title = item.SEARCHVAL || item.ADDRESS || '';
+      subtitle = '';
     }
-    const area = addr.suburb || addr.neighbourhood || addr.quarter || addr.residential || '';
-    if (area && !parts.includes(area)) parts.push(area);
-    if (parts.length === 0) {
-      parts.push(...item.display_name.split(',').slice(0, 2).map(s => s.trim()));
-    }
-    const selectValue = parts.join(', ') + ', Singapore';
+
+    const selectValue = [title, subtitle].filter(Boolean).join(', ') + ', Singapore';
     return {
       selectValue,
-      title: parts[0] || item.name || '',
-      subtitle: parts.slice(1).join(', '),
-      lat: parseFloat(item.lat),
-      lon: parseFloat(item.lon),
+      title,
+      subtitle,
+      lat: parseFloat(item.LATITUDE),
+      lon: parseFloat(item.LONGITUDE),
     };
   });
 }
@@ -113,18 +115,7 @@ export default function PlaceInput({ value, onChange, onLocationSelect, placehol
       setLoading(true);
       try {
         const input = val.trim();
-        let data = await nominatimSearch(input);
-        if (data.length === 0 && input.includes(' ')) {
-          const words = input.split(/\s+/);
-          data = await nominatimSearch([...words].reverse().join(' '));
-        }
-        if (data.length === 0 && input.includes(' ')) {
-          const words = input.split(/\s+/);
-          for (let drop = words.length - 1; drop >= 1; drop--) {
-            data = await nominatimSearch(words.filter((_, i) => i !== drop).join(' '));
-            if (data.length > 0) break;
-          }
-        }
+        const data = await onemapSearch(input);
         const results = parseResults(data);
         setSuggestions(results);
         setShowDropdown(results.length > 0);

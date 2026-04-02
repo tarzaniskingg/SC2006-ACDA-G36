@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { formatDuration, formatCost } from '../utils/helpers';
 
 function cellColor(value, allValues, lowerBetter = true) {
@@ -19,7 +20,7 @@ function parseSlotLabel(time) {
   return { group: time.slice(0, idx), label: time.slice(idx + 2) };
 }
 
-function GroupTable({ groupName, slots }) {
+function GroupTable({ groupName, slots, t }) {
   if (!slots.length) return null;
 
   const allScores = slots.map(s => s.best_score);
@@ -34,7 +35,7 @@ function GroupTable({ groupName, slots }) {
         <table className="w-full text-[11px]">
           <thead>
             <tr className="border-b border-white/[0.06]">
-              <th className="text-left py-1.5 pr-2 text-slate-500 font-medium font-display w-20">Metric</th>
+              <th className="text-left py-1.5 pr-2 text-slate-500 font-medium font-display w-20">{t('time.metric')}</th>
               {slots.map((s, i) => (
                 <th key={i} className="text-center py-1.5 px-1.5 text-slate-400 font-medium font-display whitespace-nowrap">
                   {parseSlotLabel(s.time).label}
@@ -44,7 +45,7 @@ function GroupTable({ groupName, slots }) {
           </thead>
           <tbody>
             <tr className="border-b border-white/[0.04]">
-              <td className="py-1.5 pr-2 text-slate-400">Score</td>
+              <td className="py-1.5 pr-2 text-slate-400">{t('time.score')}</td>
               {slots.map((s, i) => (
                 <td key={i} className={`text-center py-1.5 px-1.5 font-mono rounded ${cellColor(s.best_score, allScores)}`}>
                   {s.best_score?.toFixed(3) ?? '--'}
@@ -52,29 +53,29 @@ function GroupTable({ groupName, slots }) {
               ))}
             </tr>
             <tr className="border-b border-white/[0.04]">
-              <td className="py-1.5 pr-2 text-slate-400">Time</td>
+              <td className="py-1.5 pr-2 text-slate-400">{t('time.time')}</td>
               {slots.map((s, i) => {
-                const t = s.routes?.[0]?.time_min;
+                const tm = s.routes?.[0]?.time_min;
                 return (
-                  <td key={i} className={`text-center py-1.5 px-1.5 font-mono rounded ${cellColor(t, allTimes)}`}>
-                    {t != null ? formatDuration(t) : '--'}
+                  <td key={i} className={`text-center py-1.5 px-1.5 font-mono rounded ${cellColor(tm, allTimes)}`}>
+                    {tm != null ? formatDuration(tm) : '--'}
                   </td>
                 );
               })}
             </tr>
             <tr className="border-b border-white/[0.04]">
-              <td className="py-1.5 pr-2 text-slate-400">Realistic</td>
+              <td className="py-1.5 pr-2 text-slate-400">{t('time.realistic')}</td>
               {slots.map((s, i) => {
-                const t = s.routes?.[0]?.realistic_time_min;
+                const tm = s.routes?.[0]?.realistic_time_min;
                 return (
-                  <td key={i} className={`text-center py-1.5 px-1.5 font-mono rounded ${cellColor(t, allReal)}`}>
-                    {t != null ? formatDuration(t) : '--'}
+                  <td key={i} className={`text-center py-1.5 px-1.5 font-mono rounded ${cellColor(tm, allReal)}`}>
+                    {tm != null ? formatDuration(tm) : '--'}
                   </td>
                 );
               })}
             </tr>
             <tr className="border-b border-white/[0.04]">
-              <td className="py-1.5 pr-2 text-slate-400">Cost</td>
+              <td className="py-1.5 pr-2 text-slate-400">{t('time.cost')}</td>
               {slots.map((s, i) => {
                 const c = s.routes?.[0]?.cost_est;
                 return (
@@ -85,7 +86,7 @@ function GroupTable({ groupName, slots }) {
               })}
             </tr>
             <tr>
-              <td className="py-1.5 pr-2 text-slate-400">Crowding</td>
+              <td className="py-1.5 pr-2 text-slate-400">{t('time.crowding')}</td>
               {slots.map((s, i) => {
                 const cat = s.routes?.[0]?.risk_crowding_cat;
                 const cls = { Low: 'risk-low', Medium: 'risk-med', High: 'risk-high' }[cat] || 'risk-unk';
@@ -104,6 +105,7 @@ function GroupTable({ groupName, slots }) {
 }
 
 export default function TimeCompare({ data, onClose }) {
+  const { t } = useTranslation();
   if (!data?.slots?.length) return null;
 
   // Group slots by their group prefix
@@ -127,10 +129,10 @@ export default function TimeCompare({ data, onClose }) {
         onClick={e => e.stopPropagation()}>
 
         <div className="flex items-center justify-between">
-          <h3 className="text-[14px] font-bold text-white font-display">Departure Time Comparison</h3>
+          <h3 className="text-[14px] font-bold text-white font-display">{t('time.departComparison')}</h3>
           <button onClick={onClose}
             className="text-[11px] text-slate-400 hover:text-slate-200 font-medium px-2 py-1 rounded-lg hover:bg-white/[0.05] transition-colors">
-            Close
+            {t('time.close')}
           </button>
         </div>
 
@@ -139,11 +141,11 @@ export default function TimeCompare({ data, onClose }) {
         </p>
 
         {groups.map((g, i) => (
-          <GroupTable key={i} groupName={g.name} slots={g.slots} />
+          <GroupTable key={i} groupName={g.name} slots={g.slots} t={t} />
         ))}
 
         <p className="text-[9px] text-slate-500 text-center font-display pt-1">
-          Best route per time slot &middot; Lower score is better &middot; All times are future departures
+          {t('time.footnote')}
         </p>
       </div>
     </div>

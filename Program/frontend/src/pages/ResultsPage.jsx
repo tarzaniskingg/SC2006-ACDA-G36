@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, MapPin, Clock, Loader2, RefreshCw } from 'lucide-react';
 import RouteCard from '../components/RouteCard';
 import TimeCompare from '../components/TimeCompare';
 import { fetchCompare } from '../utils/api';
 
 export default function ResultsPage({ results, query, selectedRoute, onSelectRoute, onRefresh }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [compareData, setCompareData] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
@@ -45,10 +47,10 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl glass mb-4">
             <MapPin size={28} className="text-slate-500" />
           </div>
-          <h2 className="text-lg font-semibold text-slate-200 mb-1 font-display">No routes yet</h2>
-          <p className="text-sm text-slate-500 mb-4">Search for a route to see results here</p>
+          <h2 className="text-lg font-semibold text-slate-200 mb-1 font-display">{t('results.noRoutes')}</h2>
+          <p className="text-sm text-slate-500 mb-4">{t('results.searchPrompt')}</p>
           <button onClick={() => navigate('/')} className="btn-primary py-2.5 px-5 rounded-xl text-sm font-display">
-            Search Routes
+            {t('results.searchRoutes')}
           </button>
         </div>
       </div>
@@ -67,12 +69,12 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
             {query?.origin} &rarr; {query?.destination}
           </p>
           <h2 className="text-lg font-bold text-white font-display">
-            {routes.length} route{routes.length !== 1 ? 's' : ''} found
+            {t('results.routesFound', { count: routes.length })}
           </h2>
         </div>
         <button onClick={handleRefresh} disabled={refreshing}
           className="p-2 rounded-xl hover:bg-white/[0.05] transition-colors disabled:opacity-50"
-          title="Refresh routes">
+          title={t('results.refresh')}>
           <RefreshCw size={17} className={`text-slate-400 ${refreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
@@ -87,13 +89,13 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
       {/* Legend */}
       <div className="flex items-center gap-3 mb-4 px-1 animate-fade-up delay-1">
         <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-          <span className="w-2 h-2 rounded-full bg-emerald-400" /> Low
+          <span className="w-2 h-2 rounded-full bg-emerald-400" /> {t('risk.low')}
         </span>
         <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-          <span className="w-2 h-2 rounded-full bg-amber-400" /> Medium
+          <span className="w-2 h-2 rounded-full bg-amber-400" /> {t('risk.medium')}
         </span>
         <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-          <span className="w-2 h-2 rounded-full bg-red-400" /> High
+          <span className="w-2 h-2 rounded-full bg-red-400" /> {t('risk.high')}
         </span>
       </div>
 
@@ -101,9 +103,9 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
       <button onClick={handleCompare} disabled={compareLoading}
         className="w-full mb-3 flex items-center justify-center gap-2 glass glass-hover py-2.5 px-4 rounded-xl text-[11px] font-semibold text-amber-400/80 font-display transition-all disabled:opacity-50 animate-fade-up delay-2">
         {compareLoading ? (
-          <><Loader2 size={13} className="animate-spin" /> Comparing...</>
+          <><Loader2 size={13} className="animate-spin" /> {t('results.comparing')}</>
         ) : (
-          <><Clock size={13} /> Compare Departure Times</>
+          <><Clock size={13} /> {t('results.compareDepart')}</>
         )}
       </button>
 
@@ -133,7 +135,7 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
           <button onClick={() => navigate('/map')}
             className="w-full btn-primary py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 font-display font-semibold text-sm"
             style={{ boxShadow: '0 4px 30px rgba(232,152,58,0.25)' }}>
-            <MapPin size={17} /> View on Map
+            <MapPin size={17} /> {t('results.viewOnMap')}
           </button>
         </div>
       )}
