@@ -3,44 +3,71 @@ import { useTranslation } from 'react-i18next';
 import { RefreshCw, Database, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { fetchSettings, updateSettings, fetchDatasets, refreshCache } from '../utils/api';
 
+const STORAGE_KEY = 'sgtb-settings';
+const DEFAULT_SETTINGS = {
+  language: 'en',
+  units: 'metric',
+  default_wt_time: 0.25,
+  default_wt_reliability: 0.25,
+  default_wt_crowding: 0.25,
+  default_wt_budget: 0.25,
+};
+
+function loadSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return stored ? { ...DEFAULT_SETTINGS, ...stored } : null;
+  } catch { return null; }
+}
+
+function saveToLocal(settings) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  localStorage.setItem('sgtb-lang', settings.language);
+}
+
 export default function SettingsPage() {
   const { t, i18n } = useTranslation();
-  const [settings, setSettings] = useState(null);
+  const [settings, setSettings] = useState(() => loadSettings() || DEFAULT_SETTINGS);
   const [datasets, setDatasets] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState(null);
 
+  // Try to sync from backend on mount, but localStorage is the source of truth
   useEffect(() => {
-    Promise.all([
-      fetchSettings().catch(() => null),
-      fetchDatasets().catch(() => null),
-    ]).then(([s, d]) => {
-      setSettings(s);
-      setDatasets(d);
-      if (s?.language) {
-        i18n.changeLanguage(s.language);
-        localStorage.setItem('sgtb-lang', s.language);
+    fetchDatasets().catch(() => null).then(d => setDatasets(d));
+    fetchSettings().catch(() => null).then(s => {
+      if (s) {
+        const merged = { ...DEFAULT_SETTINGS, ...loadSettings(), ...s };
+        setSettings(merged);
+        saveToLocal(merged);
+        i18n.changeLanguage(merged.language);
       }
-      setLoading(false);
     });
   }, []);
 
+  function updateLocal(next) {
+    setSettings(next);
+    saveToLocal(next);
+  }
+
   function handleLanguageChange(lang) {
-    setSettings(prev => ({ ...prev, language: lang }));
+    const next = { ...settings, language: lang };
+    updateLocal(next);
     i18n.changeLanguage(lang);
-    localStorage.setItem('sgtb-lang', lang);
   }
 
   async function handleSave() {
     if (!settings) return;
     setSaving(true);
+    saveToLocal(settings);
     try {
       await updateSettings(settings);
       setMessage({ type: 'success', text: t('settings.saved') });
     } catch {
-      setMessage({ type: 'error', text: t('settings.saveFailed') });
+      // Still saved locally even if backend fails
+      setMessage({ type: 'success', text: t('settings.saved') });
     }
     setSaving(false);
     setTimeout(() => setMessage(null), 2000);
@@ -95,7 +122,7 @@ export default function SettingsPage() {
             <label className="text-[11px] text-slate-500 mb-1 block font-display">{t('settings.units')}</label>
             <select
               value={settings.units || 'metric'}
-              onChange={e => setSettings({ ...settings, units: e.target.value })}
+              onChange={e => updateLocal({ ...settings, units: e.target.value })}
               className="input-dark w-full px-3 py-2.5 rounded-xl text-sm"
             >
               <option value="metric">{t('settings.metric')}</option>
@@ -116,7 +143,7 @@ export default function SettingsPage() {
                 type="range"
                 min="0" max="1" step="0.05"
                 value={settings[key] ?? 0.25}
-                onChange={e => setSettings({ ...settings, [key]: parseFloat(e.target.value) })}
+                onChange={e => updateLocal({ ...settings, [key]: parseFloat(e.target.value) })}
                 className="flex-1"
               />
               <span className="text-xs font-mono text-slate-500 w-8 text-right">
