@@ -1,6 +1,9 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
+from datetime import datetime, timezone, timedelta
 from .scoring import normalize, composite_score, tie_break_key, explain, compute_risk, compute_comfort
 from ..models.schemas import SegmentAssessment, RiskCategory, RouteStep
+
+SGT = timezone(timedelta(hours=8))
 
 
 _VEHICLE_MODE_MAP = {
@@ -46,32 +49,112 @@ def aggregate_route_risks(segments: List[SegmentAssessment]) -> Tuple[RiskCatego
     return crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback
 
 
-def estimate_cost(distance_m: float, duration_s: float, mode: str) -> dict:
+def _is_peak(dt: datetime) -> bool:
+    """Check if datetime falls in CDG peak period surcharge window."""
+    wd = dt.weekday()  # 0=Mon..6=Sun
+    h, m = dt.hour, dt.minute
+    t = h * 60 + m
+    # Mon-Fri (not PH): 6:00am - 9:29am
+    if wd < 5 and 360 <= t <= 569:
+        return True
+    # Mon-Sun: 5:00pm - 11:59pm
+    if t >= 1020:
+        return True
+    # Sat-Sun: 10:00am - 1:59pm
+    if wd >= 5 and 600 <= t <= 839:
+        return True
+    return False
+
+
+def _is_late_night(dt: datetime) -> bool:
+    """Check if datetime falls in CDG late-night window (midnight–5:59am)."""
+    return dt.hour < 6
+
+
+# Changi Airport bounding box (approximate)
+_CHANGI_AIRPORT = {"lat_min": 1.330, "lat_max": 1.365, "lng_min": 103.975, "lng_max": 104.005}
+
+
+def _is_changi_airport(lat: Optional[float], lng: Optional[float]) -> bool:
+    if lat is None or lng is None:
+        return False
+    return (_CHANGI_AIRPORT["lat_min"] <= lat <= _CHANGI_AIRPORT["lat_max"]
+            and _CHANGI_AIRPORT["lng_min"] <= lng <= _CHANGI_AIRPORT["lng_max"])
+
+
+def estimate_cost(
+    distance_m: float,
+    duration_s: float,
+    mode: str,
+    departure_time: Optional[datetime] = None,
+    origin_lat: Optional[float] = None,
+    origin_lng: Optional[float] = None,
+) -> dict:
     """
     Return a cost breakdown dict with itemised components.
 
     Public transit: Singapore adult card fare (TransitLink distance-based).
-    Taxi/driving:   ComfortDelGro metered fare structure.
+    Taxi/driving:   ComfortDelGro metered fare structure (2026 rates).
+    Source: https://www.cdgtaxi.com.sg/ride-with-us/fares/
     """
     distance_km = max(0.0, distance_m) / 1000.0
     duration_min = max(0.0, duration_s) / 60.0
 
     if mode == "driving" or mode == "taxi":
-        # ComfortDelGro taxi meter (2024 rates)
-        flag_down = 4.00
-        if distance_km <= 10:
-            distance_charge = distance_km * 0.55
+        # --- Base metered fare (standard hybrid taxi) ---
+        flag_down = 4.60  # First 1km or less
+        # After 1km: $0.27 per 400m up to 10km, $0.27 per 350m after 10km
+        if distance_km <= 1:
+            distance_charge = 0.0  # covered by flag-down
+        elif distance_km <= 10:
+            distance_charge = (distance_km - 1) * (0.27 / 0.4)
         else:
-            distance_charge = (10 * 0.55) + ((distance_km - 10) * 0.629)
+            distance_charge = (9 * (0.27 / 0.4)) + ((distance_km - 10) * (0.27 / 0.35))
+        # Waiting: $0.27 per 45 seconds; assume 20% of trip is idle
         idle_min = duration_min * 0.20
-        waiting_charge = (idle_min * 60 / 45) * 0.22
-        total = flag_down + distance_charge + waiting_charge
+        waiting_charge = (idle_min * 60 / 45) * 0.27
+        metered_fare = flag_down + distance_charge + waiting_charge
+
+        # --- Surcharges (CDG 2026) ---
+        dt = departure_time.astimezone(SGT) if departure_time else datetime.now(SGT)
+
+        # Peak period: 25% of metered fare
+        peak_surcharge = 0.0
+        if _is_peak(dt):
+            peak_surcharge = metered_fare * 0.25
+
+        # Late night: 50% of metered fare (supersedes peak if applicable)
+        late_night_surcharge = 0.0
+        if _is_late_night(dt):
+            late_night_surcharge = metered_fare * 0.50
+            peak_surcharge = 0.0  # late-night replaces peak
+
+        # Booking fee: $3.30 during peak, $2.30 otherwise
+        if _is_peak(dt) or _is_late_night(dt):
+            booking_fee = 3.30
+        else:
+            booking_fee = 2.30
+
+        # Changi Airport surcharge
+        airport_surcharge = 0.0
+        if _is_changi_airport(origin_lat, origin_lng):
+            if dt.hour >= 17:  # 5pm-11:59pm
+                airport_surcharge = 8.00
+            else:
+                airport_surcharge = 6.00
+
+        total = (metered_fare + peak_surcharge + late_night_surcharge
+                 + booking_fee + airport_surcharge)
         return {
             "total": round(total, 2),
             "flag_down": round(flag_down, 2),
             "distance_charge": round(distance_charge, 2),
             "distance_km": round(distance_km, 2),
             "waiting_charge": round(waiting_charge, 2),
+            "peak_surcharge": round(peak_surcharge, 2),
+            "late_night_surcharge": round(late_night_surcharge, 2),
+            "booking_fee": round(booking_fee, 2),
+            "airport_surcharge": round(airport_surcharge, 2),
             "mode": "taxi",
         }
     elif mode == "owncar":

@@ -203,7 +203,13 @@ def get_routes(
 
         if mode == "driving":
             # --- Taxi candidate (no parking penalty — taxi drops you off) ---
-            taxi_cost = estimate_cost(distance_m, duration_s, "taxi")
+            start_loc = leg.get("start_location") or {}
+            taxi_cost = estimate_cost(
+                distance_m, duration_s, "taxi",
+                departure_time=dt,
+                origin_lat=start_loc.get("lat"),
+                origin_lng=start_loc.get("lng"),
+            )
             if erp_data:
                 taxi_cost["erp"] = erp_data["total"]
                 taxi_cost["erp_gantries"] = erp_data["gantries"]
@@ -504,7 +510,13 @@ def _run_routes_for_slot(
         segs, bus_freqs = assess_segments_from_google_route(r, departure_time=slot_dt)
         crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
         route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
-        cost_info = estimate_cost(distance_m, duration_s, "driving" if rmode == "driving" else "transit")
+        start_loc = leg.get("start_location") or {}
+        cost_info = estimate_cost(
+            distance_m, duration_s, "driving" if rmode == "driving" else "transit",
+            departure_time=slot_dt,
+            origin_lat=start_loc.get("lat"),
+            origin_lng=start_loc.get("lng"),
+        )
         walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
         time_min = round(duration_s / 60.0, 1)
         realistic_time_min = compute_realistic_time(time_min, route_steps)
