@@ -124,6 +124,7 @@
   "settings.fallback": "Sandaran",
   "settings.live": "Langsung",
   "settings.noDatasets": "Tidak dapat memuatkan maklumat set data",
+  "settings.backendOffline": "Backend tidak berjalan. Mulakan pelayan untuk melihat status data.",
 
   "time.departComparison": "Perbandingan Masa Berlepas",
   "time.close": "Tutup",

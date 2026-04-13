@@ -75,14 +75,10 @@ export default function SettingsPage() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await refreshCache();
-      // Cache was just cleared — re-fetch datasets so status repopulates
-      const d = await fetchDatasets().catch(() => null);
-      setDatasets(d);
+      const result = await refreshCache();
+      setDatasets(result);
       setMessage({ type: 'success', text: t('settings.cacheRefreshed') });
-    } catch (err) {
-      // If backend is unreachable, show the actual error
-      setDatasets(null);
+    } catch {
       setMessage({ type: 'error', text: t('settings.refreshFailed') });
     }
     setRefreshing(false);
@@ -184,7 +180,7 @@ export default function SettingsPage() {
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-slate-500">{t('settings.noDatasets')}</p>
+          <p className="text-[11px] text-slate-500">{t('settings.backendOffline')}</p>
         )}
       </div>
 

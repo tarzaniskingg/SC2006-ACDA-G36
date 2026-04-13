@@ -124,6 +124,7 @@
   "settings.fallback": "காப்பு",
   "settings.live": "நேரலை",
   "settings.noDatasets": "தரவுத்தொகுப்பு தகவலை ஏற்ற இயலவில்லை",
+  "settings.backendOffline": "பின்னணி இயங்கவில்லை. நேரடி தரவு நிலையைக் காண சேவையகத்தைத் தொடங்கவும்.",
 
   "time.departComparison": "புறப்படும் நேர ஒப்பீடு",
   "time.close": "மூடு",

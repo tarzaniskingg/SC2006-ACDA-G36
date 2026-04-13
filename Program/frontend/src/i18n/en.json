@@ -124,6 +124,7 @@
   "settings.fallback": "Fallback",
   "settings.live": "Live",
   "settings.noDatasets": "Could not load dataset info",
+  "settings.backendOffline": "Backend is not running. Start the server to see live data status.",
 
   "time.departComparison": "Departure Time Comparison",
   "time.close": "Close",

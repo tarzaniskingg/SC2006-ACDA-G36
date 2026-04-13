@@ -124,6 +124,7 @@
   "settings.fallback": "备用",
   "settings.live": "实时",
   "settings.noDatasets": "无法加载数据集信息",
+  "settings.backendOffline": "后端未运行。启动服务器以查看实时数据状态。",
 
   "time.departComparison": "出发时间比较",
   "time.close": "关闭",
