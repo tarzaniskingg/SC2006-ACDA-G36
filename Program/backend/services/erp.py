@@ -1,10 +1,10 @@
 """ERP gantry proximity calculation for driving routes."""
 
 import json
-import math
 import os
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
+from .geo import haversine_m as _haversine_m, decode_polyline as _decode_polyline
 
 
 _FIXTURES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fixtures")
@@ -22,39 +22,6 @@ def _load_gantries() -> List[Dict]:
     except Exception:
         _erp_gantries = []
     return _erp_gantries
-
-
-def _haversine_m(lat1, lng1, lat2, lng2):
-    R = 6_371_000
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lng2 - lng1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
-def _decode_polyline(encoded: str) -> List[Tuple[float, float]]:
-    """Decode Google's encoded polyline into list of (lat, lng) tuples."""
-    points = []
-    index = 0
-    lat = lng = 0
-    while index < len(encoded):
-        for coord in range(2):
-            shift = result = 0
-            while True:
-                b = ord(encoded[index]) - 63
-                index += 1
-                result |= (b & 0x1F) << shift
-                shift += 5
-                if b < 0x20:
-                    break
-            delta = ~(result >> 1) if (result & 1) else (result >> 1)
-            if coord == 0:
-                lat += delta
-            else:
-                lng += delta
-        points.append((lat / 1e5, lng / 1e5))
-    return points
 
 
 def _get_rate_for_time(schedule: List[Dict], dt: datetime) -> float:

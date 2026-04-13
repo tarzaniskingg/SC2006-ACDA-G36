@@ -1,8 +1,8 @@
 """Weather-aware routing — matches NEA 2-hour forecast areas to route coordinates."""
 
-import math
 from typing import Optional, Dict, Tuple
 from ..clients import nea
+from .geo import haversine_m
 
 # NEA 24 forecast areas → approximate centroid lat/lng
 _NEA_AREAS = {
@@ -59,23 +59,14 @@ _NEA_AREAS = {
 _RAIN_KEYWORDS = {"rain", "shower", "thundery", "drizzle", "storm"}
 
 
-def _haversine_km(lat1, lng1, lat2, lng2):
-    R = 6371
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lng2 - lng1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
 def _nearest_area(lat: float, lng: float) -> Optional[str]:
-    best, best_d = None, 999
+    best, best_d = None, 999_000
     for name, (alat, alng) in _NEA_AREAS.items():
-        d = _haversine_km(lat, lng, alat, alng)
+        d = haversine_m(lat, lng, alat, alng)
         if d < best_d:
             best_d = d
             best = name
-    return best if best_d < 10 else None
+    return best if best_d < 10_000 else None
 
 
 def get_weather_for_route(

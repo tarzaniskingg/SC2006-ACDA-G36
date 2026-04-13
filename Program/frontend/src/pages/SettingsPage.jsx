@@ -28,7 +28,6 @@ export default function SettingsPage() {
   const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState(() => loadSettings() || DEFAULT_SETTINGS);
   const [datasets, setDatasets] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState(null);
@@ -83,14 +82,6 @@ export default function SettingsPage() {
     }
     setRefreshing(false);
     setTimeout(() => setMessage(null), 2000);
-  }
-
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center pb-24">
-        <Loader2 className="animate-spin text-amber-400" size={24} />
-      </div>
-    );
   }
 
   const sources = datasets?.sources || {};

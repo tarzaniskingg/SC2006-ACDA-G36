@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Tuple, Optional
 from ..models.schemas import SegmentAssessment, RiskIndicator, RiskCategory
 from ..clients import lta as lta_client
+from .geo import haversine_m as _haversine_m, decode_polyline as _decode_polyline
 
 
 LOAD_TO_CROWD = {
@@ -129,15 +130,6 @@ def _lookup_station(station_name: str) -> Optional[Tuple[str, str]]:
             return val
 
     return None
-
-
-def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    R = 6_371_000
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlam = math.radians(lng2 - lng1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
-    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 # ---------------------------------------------------------------------------
@@ -404,30 +396,6 @@ def _bus_frequency_for_stop_and_service(
 # Driving delay — uses TrafficSpeedBands
 # ---------------------------------------------------------------------------
 
-def _decode_polyline(encoded: str) -> List[Tuple[float, float]]:
-    """Decode a Google encoded polyline into a list of (lat, lng) tuples."""
-    points = []
-    index = 0
-    lat = lng = 0
-    while index < len(encoded):
-        for coord in range(2):
-            shift = result = 0
-            while True:
-                b = ord(encoded[index]) - 63
-                index += 1
-                result |= (b & 0x1F) << shift
-                shift += 5
-                if b < 0x20:
-                    break
-            delta = ~(result >> 1) if (result & 1) else (result >> 1)
-            if coord == 0:
-                lat += delta
-            else:
-                lng += delta
-        points.append((lat / 1e5, lng / 1e5))
-    return points
-
-
 def _sample_polyline(points: List[Tuple[float, float]], max_samples: int = 20) -> List[Tuple[float, float]]:
     """Evenly sample points from a polyline to keep speed band matching fast."""
     if len(points) <= max_samples:
@@ -458,8 +426,10 @@ def _delay_risk_for_driving_segment(
             if end_lat is not None and end_lng is not None:
                 route_points.append((end_lat, end_lng))
 
-        # Pre-parse all band coordinates once
-        parsed_bands = []
+        # Build a grid index for fast spatial lookup (~0.005 deg ≈ 500m)
+        CELL = 0.005
+        grid = {}
+        idx = 0
         for band in items:
             try:
                 blat = float(band.get("StartLat", 0))
@@ -467,18 +437,23 @@ def _delay_risk_for_driving_segment(
                 sb = int(band.get("SpeedBand", 0))
             except (ValueError, TypeError):
                 continue
-            parsed_bands.append((blat, blng, sb))
+            cell_key = (round(blat / CELL), round(blng / CELL))
+            grid.setdefault(cell_key, []).append((idx, blat, blng, sb))
+            idx += 1
 
         # Match speed bands within 500m of any sampled route point
-        matched = set()  # deduplicate by index
+        matched = set()
         relevant_bands = []
         for plat, plng in route_points:
-            for idx, (blat, blng, sb) in enumerate(parsed_bands):
-                if idx in matched:
-                    continue
-                if _haversine_m(plat, plng, blat, blng) < 500:
-                    relevant_bands.append(sb)
-                    matched.add(idx)
+            ck = (round(plat / CELL), round(plng / CELL))
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    for bidx, blat, blng, sb in grid.get((ck[0] + di, ck[1] + dj), []):
+                        if bidx in matched:
+                            continue
+                        if _haversine_m(plat, plng, blat, blng) < 500:
+                            relevant_bands.append(sb)
+                            matched.add(bidx)
 
         if relevant_bands:
             # SpeedBand: 1=0-9km/h, 2=10-19, 3=20-29, 4=30-39, 5+=40+
