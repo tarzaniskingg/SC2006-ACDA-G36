@@ -6,7 +6,6 @@ import { fetchSettings, updateSettings, fetchDatasets, refreshCache } from '../u
 const STORAGE_KEY = 'sgtb-settings';
 const DEFAULT_SETTINGS = {
   language: 'en',
-  units: 'metric',
   default_wt_time: 0.25,
   default_wt_reliability: 0.25,
   default_wt_crowding: 0.25,
@@ -118,18 +117,6 @@ export default function SettingsPage() {
               <option value="ta">{t('settings.langTa')}</option>
             </select>
           </div>
-          <div>
-            <label className="text-[11px] text-slate-500 mb-1 block font-display">{t('settings.units')}</label>
-            <select
-              value={settings.units || 'metric'}
-              onChange={e => updateLocal({ ...settings, units: e.target.value })}
-              className="input-dark w-full px-3 py-2.5 rounded-xl text-sm"
-            >
-              <option value="metric">{t('settings.metric')}</option>
-              <option value="imperial">{t('settings.imperial')}</option>
-            </select>
-          </div>
-
           <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider pt-2 font-display">{t('settings.defaultWeights')}</h3>
           {[
             { key: 'default_wt_time', label: t('settings.weightTime') },

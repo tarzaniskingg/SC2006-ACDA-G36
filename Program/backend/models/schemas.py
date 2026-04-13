@@ -134,7 +134,6 @@ class DatasetsStatusResponse(BaseModel):
 
 class Settings(BaseModel):
     language: str = "en"
-    units: str = "metric"
     default_wt_time: float = 0.25
     default_wt_cost: float = 0.25
     default_wt_risk: float = 0.25
