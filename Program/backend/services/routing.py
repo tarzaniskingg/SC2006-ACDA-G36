@@ -357,7 +357,7 @@ def rank_routes(candidate_routes: List[Dict], weights: Dict[str, float]) -> List
         r["risk_num"] = compute_risk(r.get("risk_crowding_num", 2), r.get("risk_delay_num", 2))
         r["comfort_num"] = compute_comfort(r.get("walk_min", 0.0), r.get("transfers", 0))
 
-    times = [r.get("time_min", 0.0) for r in candidate_routes]
+    times = [r.get("realistic_time_min", r.get("time_min", 0.0)) for r in candidate_routes]
     costs = [r.get("cost_est", 0.0) for r in candidate_routes]
     risks = [r.get("risk_num", 2.0) for r in candidate_routes]
     comforts = [r.get("comfort_num", 0.0) for r in candidate_routes]
