@@ -414,33 +414,31 @@ def _delay_risk_for_driving_segment(start_lat: Optional[float], start_lng: Optio
 
     try:
         items = speed_data.get("value") or []
-        relevant_speeds = []
+        relevant_bands = []
         for band in items:
-            loc = band.get("Location") or ""
+            # v4 API returns StartLat/StartLon/EndLat/EndLon as separate fields
             try:
-                parts = loc.split()
-                if len(parts) >= 2:
-                    blat, blng = float(parts[0]), float(parts[1])
-                    d = _haversine_m(start_lat, start_lng, blat, blng)
-                    if d < 1000:
-                        speed = float(band.get("SpeedBand", 0))
-                        relevant_speeds.append(speed)
-                    elif end_lat is not None and end_lng is not None:
-                        d2 = _haversine_m(end_lat, end_lng, blat, blng)
-                        if d2 < 1000:
-                            speed = float(band.get("SpeedBand", 0))
-                            relevant_speeds.append(speed)
-            except (ValueError, IndexError):
+                blat = float(band.get("StartLat", 0))
+                blng = float(band.get("StartLon", 0))
+            except (ValueError, TypeError):
                 continue
+            d = _haversine_m(start_lat, start_lng, blat, blng)
+            if d < 1000:
+                relevant_bands.append(int(band.get("SpeedBand", 0)))
+            elif end_lat is not None and end_lng is not None:
+                d2 = _haversine_m(end_lat, end_lng, blat, blng)
+                if d2 < 1000:
+                    relevant_bands.append(int(band.get("SpeedBand", 0)))
 
-        if relevant_speeds:
-            avg_speed = sum(relevant_speeds) / len(relevant_speeds)
-            if avg_speed >= 6:
-                cat = "Low"
-            elif avg_speed >= 3:
-                cat = "Medium"
+        if relevant_bands:
+            # SpeedBand: 1=0-9km/h, 2=10-19, 3=20-29, 4=30-39, 5+=40+
+            avg_band = sum(relevant_bands) / len(relevant_bands)
+            if avg_band >= 4:
+                cat = "Low"       # 30+ km/h — flowing
+            elif avg_band >= 2:
+                cat = "Medium"    # 10-29 km/h — moderate congestion
             else:
-                cat = "High"
+                cat = "High"      # 0-9 km/h — heavy congestion
     except Exception:
         cat = "Unknown"
 
