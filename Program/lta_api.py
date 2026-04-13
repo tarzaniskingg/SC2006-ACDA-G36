@@ -59,9 +59,18 @@ def get_pcd_forecast(train_line=None):
 def get_train_service_alerts():
     return get("TrainServiceAlerts")
 
-#traffic speed bands
+#traffic speed bands (paginated — LTA returns max 500 per call)
 def get_traffic_speed_bands():
-    return get("v4/TrafficSpeedBands")
+    all_items = []
+    skip = 0
+    while True:
+        data = get("v4/TrafficSpeedBands", params={"$skip": skip})
+        batch = data.get("value", [])
+        if not batch:
+            break
+        all_items.extend(batch)
+        skip += len(batch)
+    return {"value": all_items}
 
 #bus stops (full list with codes, names, lat/lng)
 def get_bus_stops():
