@@ -404,8 +404,43 @@ def _bus_frequency_for_stop_and_service(
 # Driving delay — uses TrafficSpeedBands
 # ---------------------------------------------------------------------------
 
-def _delay_risk_for_driving_segment(start_lat: Optional[float], start_lng: Optional[float],
-                                     end_lat: Optional[float], end_lng: Optional[float]) -> RiskIndicator:
+def _decode_polyline(encoded: str) -> List[Tuple[float, float]]:
+    """Decode a Google encoded polyline into a list of (lat, lng) tuples."""
+    points = []
+    index = 0
+    lat = lng = 0
+    while index < len(encoded):
+        for coord in range(2):
+            shift = result = 0
+            while True:
+                b = ord(encoded[index]) - 63
+                index += 1
+                result |= (b & 0x1F) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            delta = ~(result >> 1) if (result & 1) else (result >> 1)
+            if coord == 0:
+                lat += delta
+            else:
+                lng += delta
+        points.append((lat / 1e5, lng / 1e5))
+    return points
+
+
+def _sample_polyline(points: List[Tuple[float, float]], max_samples: int = 20) -> List[Tuple[float, float]]:
+    """Evenly sample points from a polyline to keep speed band matching fast."""
+    if len(points) <= max_samples:
+        return points
+    step = (len(points) - 1) / (max_samples - 1)
+    return [points[round(i * step)] for i in range(max_samples)]
+
+
+def _delay_risk_for_driving_segment(
+    start_lat: Optional[float], start_lng: Optional[float],
+    end_lat: Optional[float], end_lng: Optional[float],
+    overview_polyline: Optional[str] = None,
+) -> RiskIndicator:
     speed_data, ts, was_fallback = lta_client.get_traffic_speed_bands()
     cat = "Unknown"
 
@@ -414,21 +449,36 @@ def _delay_risk_for_driving_segment(start_lat: Optional[float], start_lng: Optio
 
     try:
         items = speed_data.get("value") or []
-        relevant_bands = []
+
+        # Build sample points along the route polyline (or fall back to start+end)
+        if overview_polyline:
+            route_points = _sample_polyline(_decode_polyline(overview_polyline))
+        else:
+            route_points = [(start_lat, start_lng)]
+            if end_lat is not None and end_lng is not None:
+                route_points.append((end_lat, end_lng))
+
+        # Pre-parse all band coordinates once
+        parsed_bands = []
         for band in items:
-            # v4 API returns StartLat/StartLon/EndLat/EndLon as separate fields
             try:
                 blat = float(band.get("StartLat", 0))
                 blng = float(band.get("StartLon", 0))
+                sb = int(band.get("SpeedBand", 0))
             except (ValueError, TypeError):
                 continue
-            d = _haversine_m(start_lat, start_lng, blat, blng)
-            if d < 1000:
-                relevant_bands.append(int(band.get("SpeedBand", 0)))
-            elif end_lat is not None and end_lng is not None:
-                d2 = _haversine_m(end_lat, end_lng, blat, blng)
-                if d2 < 1000:
-                    relevant_bands.append(int(band.get("SpeedBand", 0)))
+            parsed_bands.append((blat, blng, sb))
+
+        # Match speed bands within 500m of any sampled route point
+        matched = set()  # deduplicate by index
+        relevant_bands = []
+        for plat, plng in route_points:
+            for idx, (blat, blng, sb) in enumerate(parsed_bands):
+                if idx in matched:
+                    continue
+                if _haversine_m(plat, plng, blat, blng) < 500:
+                    relevant_bands.append(sb)
+                    matched.add(idx)
 
         if relevant_bands:
             # SpeedBand: 1=0-9km/h, 2=10-19, 3=20-29, 4=30-39, 5+=40+
@@ -466,9 +516,11 @@ def assess_segments_from_google_route(route: Dict, departure_time: Optional[date
         start_loc = leg.get("start_location") or {}
         end_loc = leg.get("end_location") or {}
         crowd = make_risk("Unknown")
+        polyline = (route.get("overview_polyline") or {}).get("points")
         delay = _delay_risk_for_driving_segment(
             start_loc.get("lat"), start_loc.get("lng"),
             end_loc.get("lat"), end_loc.get("lng"),
+            overview_polyline=polyline,
         )
         segments.append(
             SegmentAssessment(mode="DRIVING", from_name=start_addr, to_name=end_addr, crowding=crowd, delay=delay)
