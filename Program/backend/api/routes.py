@@ -28,6 +28,7 @@ from ..clients import lta as lta_client
 from ..services.weather import get_weather_for_route
 from ..services.erp import calculate_erp
 from ..services.parking import find_nearby_carparks
+from ..core.config import get_settings
 
 
 router = APIRouter()
@@ -424,17 +425,21 @@ def update_settings(settings: Settings):
 
 @router.post("/refresh", response_model=DatasetsStatusResponse)
 def refresh_datasets():
-    # Invalidate all cache; return empty/initial status snapshot
+    # Invalidate all cache
     global_cache.invalidate()
-    status_raw = global_cache.status()
-    sources = {}
-    for name, s in status_raw.items():
-        sources[name] = DatasetStatus(
-            last_retrieved=None if s["last_retrieved"] is None else str(s["last_retrieved"]),
-            ttl_sec=s["ttl_sec"],
-            is_fallback=s["is_fallback"],
-            source=s["source"],
-        )
+    # Return known source names so the UI doesn't go blank
+    cfg = get_settings()
+    default_sources = {
+        "bus_arrival": cfg.ttl_bus_arrival,
+        "pcd_forecast": cfg.ttl_pcd,
+        "train_alerts": 60,
+        "speed_bands": cfg.ttl_speed_bands,
+        "carpark": cfg.ttl_carpark,
+    }
+    sources = {
+        name: DatasetStatus(last_retrieved=None, ttl_sec=ttl, is_fallback=True, source="cleared")
+        for name, ttl in default_sources.items()
+    }
     return DatasetsStatusResponse(sources=sources)
 
 

@@ -6,6 +6,21 @@ import SettingsPage from './pages/SettingsPage'
 import BottomNav from './components/BottomNav'
 import { fetchRoutes } from './utils/api'
 
+function loadDefaultWeights() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('sgtb-settings'))
+    if (stored) {
+      return {
+        time: stored.default_wt_time ?? 0.25,
+        cost: stored.default_wt_cost ?? 0.25,
+        risk: stored.default_wt_risk ?? 0.25,
+        comfort: stored.default_wt_comfort ?? 0.25,
+      }
+    }
+  } catch { /* ignore */ }
+  return { time: 0.25, cost: 0.25, risk: 0.25, comfort: 0.25 }
+}
+
 function App() {
   const [results, setResults] = useState(null)
   const [query, setQuery] = useState(null)
@@ -15,7 +30,7 @@ function App() {
     origin: '',
     destination: '',
     modes: { transit: true, driving: true },
-    weights: { time: 0.25, cost: 0.25, risk: 0.25, comfort: 0.25 },
+    weights: loadDefaultWeights(),
     constraints: { max_walk_min: '', max_transfers: '', max_budget: '' },
   })
 

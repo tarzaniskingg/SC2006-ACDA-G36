@@ -7,9 +7,9 @@ const STORAGE_KEY = 'sgtb-settings';
 const DEFAULT_SETTINGS = {
   language: 'en',
   default_wt_time: 0.25,
-  default_wt_reliability: 0.25,
-  default_wt_crowding: 0.25,
-  default_wt_budget: 0.25,
+  default_wt_cost: 0.25,
+  default_wt_risk: 0.25,
+  default_wt_comfort: 0.25,
 };
 
 function loadSettings() {
@@ -76,10 +76,13 @@ export default function SettingsPage() {
     setRefreshing(true);
     try {
       await refreshCache();
+      // Cache was just cleared — re-fetch datasets so status repopulates
       const d = await fetchDatasets().catch(() => null);
       setDatasets(d);
       setMessage({ type: 'success', text: t('settings.cacheRefreshed') });
-    } catch {
+    } catch (err) {
+      // If backend is unreachable, show the actual error
+      setDatasets(null);
       setMessage({ type: 'error', text: t('settings.refreshFailed') });
     }
     setRefreshing(false);
@@ -119,10 +122,10 @@ export default function SettingsPage() {
           </div>
           <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider pt-2 font-display">{t('settings.defaultWeights')}</h3>
           {[
-            { key: 'default_wt_time', label: t('settings.weightTime') },
-            { key: 'default_wt_reliability', label: t('settings.weightReliability') },
-            { key: 'default_wt_crowding', label: t('settings.weightCrowding') },
-            { key: 'default_wt_budget', label: t('settings.weightBudget') },
+            { key: 'default_wt_time', label: t('weight.time') },
+            { key: 'default_wt_cost', label: t('weight.cost') },
+            { key: 'default_wt_risk', label: t('weight.risk') },
+            { key: 'default_wt_comfort', label: t('weight.comfort') },
           ].map(({ key, label }) => (
             <div key={key} className="flex items-center gap-3">
               <span className="text-xs text-slate-400 w-20">{label}</span>
