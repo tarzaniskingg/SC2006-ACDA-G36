@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 import requests
 from dotenv import load_dotenv
 
@@ -12,8 +14,24 @@ HEADERS = {
     "accept": "application/json"
 }
 
+# Global rate limiter: max 1 LTA call per 0.15s (~6/sec, well within typical quotas).
+# Prevents parallel threads from bursting and hitting the quota.
+_rate_lock = threading.Lock()
+_last_call_time = 0.0
+_MIN_INTERVAL = 0.15  # seconds between LTA API calls
+
+
 def get(endpoint, params=None):
+    global _last_call_time
     url = BASE_URL + endpoint
+
+    with _rate_lock:
+        now = time.monotonic()
+        wait = _MIN_INTERVAL - (now - _last_call_time)
+        if wait > 0:
+            time.sleep(wait)
+        _last_call_time = time.monotonic()
+
     response = requests.get(url, headers=HEADERS, params=params, timeout=10)
     response.raise_for_status()
     return response.json()

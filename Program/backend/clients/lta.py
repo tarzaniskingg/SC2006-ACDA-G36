@@ -27,10 +27,11 @@ def get_bus_arrival(bus_stop_code: str) -> Tuple[Dict[str, Any], float, bool]:
 def get_pcd_forecast(train_line: str = None) -> Tuple[Dict[str, Any], float, bool]:
     import lta_api
     key = f"pcd_forecast:{train_line}" if train_line else "pcd_forecast"
+    # PCD Forecast updates once per 24h — cache for 6 hours to reduce API calls
     return global_cache.get_or_fetch(
         key,
         lambda: lta_api.get_pcd_forecast(train_line=train_line),
-        get_settings().ttl_pcd,
+        21600,
     )
 
 
