@@ -577,6 +577,12 @@ def _run_routes_for_slot(
         }
 
         if rmode == "driving":
+            # ERP charges for this departure time
+            overview_polyline = (r.get("overview_polyline") or {}).get("points")
+            erp_data = None
+            if overview_polyline:
+                erp_data = calculate_erp(overview_polyline, departure_time=slot_dt)
+
             # Taxi candidate
             taxi_cost = estimate_cost(
                 distance_m, duration_s, "taxi",
@@ -584,6 +590,10 @@ def _run_routes_for_slot(
                 origin_lat=start_loc.get("lat"),
                 origin_lng=start_loc.get("lng"),
             )
+            if erp_data:
+                taxi_cost["erp"] = erp_data["total"]
+                taxi_cost["erp_gantries"] = erp_data["gantries"]
+                taxi_cost["total"] = round(taxi_cost["total"] + erp_data["total"], 2)
             candidates.append({
                 **shared_base,
                 "category": "Taxi",
@@ -597,6 +607,10 @@ def _run_routes_for_slot(
             })
             # Drive (own car) candidate
             car_cost = estimate_cost(distance_m, duration_s, "owncar")
+            if erp_data:
+                car_cost["erp"] = erp_data["total"]
+                car_cost["erp_gantries"] = erp_data["gantries"]
+                car_cost["total"] = round(car_cost["total"] + erp_data["total"], 2)
             candidates.append({
                 **shared_base,
                 "category": "Drive",
