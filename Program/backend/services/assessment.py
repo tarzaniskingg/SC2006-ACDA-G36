@@ -334,19 +334,13 @@ def _train_delay_for_segment(station_name: str) -> RiskIndicator:
 # Bus frequency risk — uses BusArrival next-bus gaps
 # ---------------------------------------------------------------------------
 
-def _bus_frequency_for_stop_and_service(
-    stop_name: str, service_no: str,
-    lat: Optional[float] = None, lng: Optional[float] = None,
-) -> Optional[Dict]:
+def _bus_frequency_from_arrival_data(data: Dict, service_no: str) -> Optional[Dict]:
     """
-    Return bus frequency data for a specific service at a stop.
-    Uses the gap between NextBus and NextBus2 to estimate headway.
+    Extract bus frequency from already-fetched BusArrival data.
+    Avoids a redundant LTA API call (crowding already fetched the same data).
     """
-    stop_code = _lookup_bus_stop_code(stop_name, lat, lng)
-    if not stop_code:
+    if not data:
         return None
-
-    data, ts, was_fallback = lta_client.get_bus_arrival(stop_code)
     try:
         services = data.get("Services") or []
         svc_data = None
@@ -530,9 +524,10 @@ def assess_segments_from_google_route(route: Dict, departure_time: Optional[date
         vehicle, dep_name, arr_name, dep_lat, dep_lng, service_no = info
         freq_data = None
         if vehicle == "BUS":
-            crowd, _ = _bus_crowding_for_stop_and_service(dep_name, service_no, dep_lat, dep_lng)
+            # Fetch bus arrival data ONCE and use it for both crowding and frequency
+            crowd, arrival_data = _bus_crowding_for_stop_and_service(dep_name, service_no, dep_lat, dep_lng)
             delay = make_risk("Low", source="default")
-            freq_data = _bus_frequency_for_stop_and_service(dep_name, service_no, dep_lat, dep_lng)
+            freq_data = _bus_frequency_from_arrival_data(arrival_data, service_no)
         elif vehicle in ("SUBWAY", "HEAVY_RAIL", "RAIL"):
             crowd, _ = _mrt_crowding_for_station(dep_name, query_time=departure_time)
             delay = _train_delay_for_segment(dep_name)
