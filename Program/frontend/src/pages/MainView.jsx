@@ -36,7 +36,9 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
   const [error, setError] = useState(null);
   const [compareData, setCompareData] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
-  const [comparePrefetch, setComparePrefetch] = useState(null); // prefetched data keyed by category
+  // Prefetched compare data per category — avoids re-fetching when switching
+  // between routes of the same type (e.g. two Public Transit routes)
+  const [comparePrefetch, setComparePrefetch] = useState({});  // { "Public Transit": data, "Taxi": data }
 
   const routes = results?.routes || [];
   const trip = results?.trip;
@@ -44,14 +46,12 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
     ? { time: trip.wt_time, cost: trip.wt_cost, risk: trip.wt_risk, comfort: trip.wt_comfort }
     : weights;
 
-  // Pre-fetch compare data in background when a route is selected
+  // Pre-fetch compare data silently when a route category is first seen
   const selectedCategory = selectedRoute?.category;
   useEffect(() => {
     if (!query?.origin || !query?.destination || !selectedCategory) return;
-    // Skip if we already have prefetched data for this category
-    if (comparePrefetch?.category === selectedCategory) return;
+    if (comparePrefetch[selectedCategory]) return; // already have it
     let cancelled = false;
-    setCompareLoading(true);
     fetchCompare({
       origin: query.origin,
       destination: query.destination,
@@ -61,10 +61,8 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
       wt_risk: tripWeights.risk,
       wt_comfort: tripWeights.comfort,
     }).then(data => {
-      if (!cancelled) setComparePrefetch(data);
-    }).catch(() => {}).finally(() => {
-      if (!cancelled) setCompareLoading(false);
-    });
+      if (!cancelled) setComparePrefetch(prev => ({ ...prev, [selectedCategory]: data }));
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [selectedCategory, query?.origin, query?.destination]);
 
@@ -119,12 +117,12 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
 
   function handleCompare() {
     if (!selectedRoute) return;
-    // Use prefetched data if available for this category
-    if (comparePrefetch?.category === selectedRoute.category) {
-      setCompareData(comparePrefetch);
+    const cached = comparePrefetch[selectedRoute.category];
+    if (cached) {
+      setCompareData(cached);
       return;
     }
-    // Otherwise fetch now (shouldn't normally happen since useEffect prefetches)
+    // Prefetch still in flight — fetch now
     if (!query?.origin || !query?.destination || compareLoading) return;
     setCompareLoading(true);
     fetchCompare({
@@ -326,15 +324,17 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
         </div>
       )}
 
-      {/* Floating compare button — bottom-right, always visible when routes exist */}
+      {/* Floating compare button — centered bottom, always visible when routes exist */}
       {routes.length > 0 && selectedRoute && (
-        <button onClick={handleCompare} disabled={compareLoading}
-          className="fixed bottom-20 right-4 z-40 flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg font-display font-semibold text-[11px] transition-all active:scale-95 bg-amber-500/90 text-slate-900 hover:bg-amber-400"
-          style={{ boxShadow: '0 4px 24px rgba(232,152,58,0.35)' }}>
-          {compareLoading
-            ? <><Loader2 size={13} className="animate-spin" /> {t('results.comparing')}</>
-            : <><Clock size={13} /> {t('results.compareDepartCategory', { category: selectedRoute.category })}</>}
-        </button>
+        <div className="fixed bottom-20 left-4 right-4 z-40 flex justify-center pointer-events-none">
+          <button onClick={handleCompare} disabled={compareLoading}
+            className="pointer-events-auto flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg font-display font-semibold text-[12px] transition-all active:scale-95 bg-amber-500/90 text-slate-900 hover:bg-amber-400"
+            style={{ boxShadow: '0 4px 24px rgba(232,152,58,0.35)' }}>
+            {compareLoading
+              ? <><Loader2 size={14} className="animate-spin" /> {t('results.comparing')}</>
+              : <><Clock size={14} /> {t('results.compareDepartCategory', { category: selectedRoute.category })}</>}
+          </button>
+        </div>
       )}
 
       {/* Time comparison modal */}

@@ -11,7 +11,7 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
   const navigate = useNavigate();
   const [compareData, setCompareData] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
-  const [comparePrefetch, setComparePrefetch] = useState(null);
+  const [comparePrefetch, setComparePrefetch] = useState({});
   const [refreshing, setRefreshing] = useState(false);
   const routes = results?.routes || [];
   const trip = results?.trip;
@@ -19,21 +19,20 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
     ? { time: trip.wt_time, cost: trip.wt_cost, risk: trip.wt_risk, comfort: trip.wt_comfort }
     : { time: 0.25, cost: 0.25, risk: 0.25, comfort: 0.25 };
 
-  // Pre-fetch compare data when route is selected
+  // Pre-fetch compare data silently per category
   const selectedCategory = selectedRoute?.category;
   useEffect(() => {
     if (!query?.origin || !query?.destination || !selectedCategory) return;
-    if (comparePrefetch?.category === selectedCategory) return;
+    if (comparePrefetch[selectedCategory]) return;
     let cancelled = false;
-    setCompareLoading(true);
     fetchCompare({
       origin: query.origin, destination: query.destination,
       category: selectedCategory,
       wt_time: weights.time, wt_cost: weights.cost,
       wt_risk: weights.risk, wt_comfort: weights.comfort,
-    }).then(data => { if (!cancelled) setComparePrefetch(data); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setCompareLoading(false); });
+    }).then(data => {
+      if (!cancelled) setComparePrefetch(prev => ({ ...prev, [selectedCategory]: data }));
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [selectedCategory, query?.origin, query?.destination]);
 
@@ -45,10 +44,8 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
 
   function handleCompare() {
     if (!selectedRoute) return;
-    if (comparePrefetch?.category === selectedRoute.category) {
-      setCompareData(comparePrefetch);
-      return;
-    }
+    const cached = comparePrefetch[selectedRoute.category];
+    if (cached) { setCompareData(cached); return; }
     if (!query?.origin || !query?.destination || compareLoading) return;
     setCompareLoading(true);
     fetchCompare({
