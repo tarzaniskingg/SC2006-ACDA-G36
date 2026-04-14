@@ -56,7 +56,13 @@ def get_bus_arrival(bus_stop_code):
 
 
 def get_carpark_availability():
-    return {"value": _paginated_get("CarParkAvailabilityv2")}
+    raw = _paginated_get("CarParkAvailabilityv2")
+    # Strip to only fields we use — saves ~60% memory
+    slim = [{"CarParkID": r.get("CarParkID"), "Area": r.get("Area"),
+             "Development": r.get("Development"), "Location": r.get("Location"),
+             "AvailableLots": r.get("AvailableLots"), "LotType": r.get("LotType"),
+             "Agency": r.get("Agency")} for r in raw]
+    return {"value": slim}
 
 
 
@@ -79,8 +85,16 @@ def get_train_service_alerts():
 
 
 def get_traffic_speed_bands():
-    return {"value": _paginated_get("v4/TrafficSpeedBands")}
+    raw = _paginated_get("v4/TrafficSpeedBands")
+    # Strip to only fields we use (StartLat, StartLon, SpeedBand) — saves ~70% memory
+    slim = [{"StartLat": r.get("StartLat"), "StartLon": r.get("StartLon"),
+             "SpeedBand": r.get("SpeedBand")} for r in raw]
+    return {"value": slim}
 
 
 def get_bus_stops():
-    return _paginated_get("BusStops")
+    raw = _paginated_get("BusStops")
+    # Strip to only fields we use — saves memory
+    return [{"BusStopCode": r.get("BusStopCode"), "Description": r.get("Description"),
+             "RoadName": r.get("RoadName"), "Latitude": r.get("Latitude"),
+             "Longitude": r.get("Longitude")} for r in raw]

@@ -1,5 +1,4 @@
 import asyncio
-import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -11,20 +10,14 @@ from dotenv import load_dotenv
 
 
 def _warm_cache():
-    """Pre-fetch heavy paginated datasets so user requests never wait."""
-    print("[STARTUP] Warming cache: bus_stops, traffic_speed_bands, carpark, weather...")
+    """Pre-fetch lightweight datasets only. Heavy paginated datasets
+    (speed bands, carparks) are fetched on-demand with per-key locks
+    to avoid duplicate work — this keeps startup memory low."""
+    print("[STARTUP] Warming cache: bus_stops, weather...")
     try:
         lta_client.get_bus_stops()
     except Exception as e:
         print(f"[STARTUP] bus_stops warm failed: {e}")
-    try:
-        lta_client.get_traffic_speed_bands()
-    except Exception as e:
-        print(f"[STARTUP] traffic_speed_bands warm failed: {e}")
-    try:
-        lta_client.get_carpark_availability()
-    except Exception as e:
-        print(f"[STARTUP] carpark warm failed: {e}")
     try:
         get_2hr_forecast()
     except Exception as e:
@@ -32,31 +25,12 @@ def _warm_cache():
     print("[STARTUP] Cache warm complete.")
 
 
-_refresh_stop = threading.Event()
-
-
-def _background_refresh():
-    """Periodically refresh heavy datasets before TTL expires."""
-    while not _refresh_stop.is_set():
-        _refresh_stop.wait(240)  # refresh every 4 min (TTL is 5 min)
-        if _refresh_stop.is_set():
-            break
-        print("[REFRESH] Background cache refresh...")
-        _warm_cache()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Warm cache BEFORE accepting requests — this ensures the first
-    # user request hits warm data instead of triggering slow paginated fetches
+    # Warm lightweight caches in background — don't block startup
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _warm_cache)
-    # Start background refresh thread to keep cache warm
-    _refresh_stop.clear()
-    t = threading.Thread(target=_background_refresh, daemon=True)
-    t.start()
+    loop.run_in_executor(None, _warm_cache)
     yield
-    _refresh_stop.set()
 
 
 def create_app() -> FastAPI:
