@@ -172,14 +172,6 @@ def estimate_cost(
         # Distance-based fare table (approximate per-km brackets):
         #   0 - 3.2 km:  $0.99
         #   3.2 - 4.2:   $1.09
-        #   4.2 - 5.2:   $1.19
-        #   5.2 - 6.2:   $1.29
-        #   6.2 - 7.2:   $1.29
-        #   7.2 - 8.2:   $1.36
-        #   8.2 - 9.2:   $1.38
-        #   9.2 - 10.2:  $1.40
-        #   10.2 - 11.2: $1.42
-        #   11.2 - 12.2: $1.44
         #   ... +$0.02 per km after that, capped at ~$2.20 (40.2km+)
         fare_table = [
             (3.2, 0.99), (4.2, 1.09), (5.2, 1.19), (6.2, 1.29),
@@ -195,9 +187,28 @@ def estimate_cost(
             if distance_km <= threshold:
                 fare = f
                 break
+
+        # Time-of-day adjustments (Singapore transit pricing)
+        dt = departure_time.astimezone(SGT) if departure_time else datetime.now(SGT)
+        wd = dt.weekday()  # 0=Mon
+        t = dt.hour * 60 + dt.minute
+
+        early_bird_discount = 0.0
+        off_peak_discount = 0.0
+        # Early-bird: tap in before 7:45am on weekdays → $0.50 off
+        if wd < 5 and t < 465:  # 7:45am = 465 min
+            early_bird_discount = 0.50
+        # Off-peak: tap in 9:30am–4pm on weekdays, or all day Sat/Sun → $0.50 off
+        elif (wd < 5 and 570 <= t <= 960) or wd >= 5:
+            off_peak_discount = 0.50
+
+        discount = max(early_bird_discount, off_peak_discount)
+        total = max(0.00, fare - discount)
         return {
-            "total": round(fare, 2),
+            "total": round(total, 2),
             "base_fare": round(fare, 2),
+            "early_bird_discount": round(early_bird_discount, 2),
+            "off_peak_discount": round(off_peak_discount, 2),
             "distance_km": round(distance_km, 2),
             "mode": "transit",
         }

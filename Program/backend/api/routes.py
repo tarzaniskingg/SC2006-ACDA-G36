@@ -191,7 +191,8 @@ def _process_one_route(r: dict, dt: Optional[datetime]) -> List[dict]:
             })
         else:
             # Transit candidate
-            transit_cost = estimate_cost(distance_m, duration_s, "transit")
+            transit_cost = estimate_cost(distance_m, duration_s, "transit",
+                                         departure_time=dt)
             results.append({
                 **shared_base,
                 "category": "Public Transit",
@@ -583,7 +584,8 @@ def _run_routes_for_slot(
             })
         else:
             # Transit candidate
-            transit_cost = estimate_cost(distance_m, duration_s, "transit")
+            transit_cost = estimate_cost(distance_m, duration_s, "transit",
+                                         departure_time=slot_dt)
             candidates.append({
                 **shared_base,
                 "category": "Public Transit",

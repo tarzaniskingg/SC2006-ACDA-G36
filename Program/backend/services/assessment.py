@@ -224,58 +224,93 @@ def _bus_crowding_for_stop_and_service(stop_name: str, service_no: str, lat: Opt
 # MRT crowding — uses PCDForecast with TrainLine param + station code matching
 # ---------------------------------------------------------------------------
 
+def _time_based_crowding(query_time: Optional[datetime] = None) -> str:
+    """Heuristic crowding based on well-known Singapore MRT peak patterns.
+    Used as fallback when LTA PCD data is unavailable."""
+    SGT = timezone(timedelta(hours=8))
+    dt = query_time or datetime.now(SGT)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=SGT)
+    else:
+        dt = dt.astimezone(SGT)
+    h, m = dt.hour, dt.minute
+    t = h * 60 + m
+    wd = dt.weekday()  # 0=Mon
+
+    if wd < 5:  # Weekday
+        # Morning peak: 7:00–9:30 AM
+        if 420 <= t <= 570:
+            return "High"
+        # Evening peak: 5:30–8:00 PM
+        if 1050 <= t <= 1200:
+            return "High"
+        # Shoulder periods: 6:00–7:00 AM, 9:30–10:30 AM, 4:30–5:30 PM, 8–9 PM
+        if (360 <= t < 420) or (570 < t <= 630) or (990 <= t < 1050) or (1200 < t <= 1260):
+            return "Medium"
+        return "Low"
+    else:  # Weekend
+        # Midday busy: 11 AM–6 PM
+        if 660 <= t <= 1080:
+            return "Medium"
+        return "Low"
+
+
 def _mrt_crowding_for_station(station_name: str, query_time: Optional[datetime] = None) -> Tuple[RiskIndicator, Dict]:
     lookup = _lookup_station(station_name)
     if not lookup:
-        return make_risk("Unknown", source="none"), {}
+        # No station found — still use time-based heuristic
+        cat = _time_based_crowding(query_time)
+        return make_risk(cat, source="heuristic", is_fallback=True), {}
 
     station_code, train_line = lookup
 
     pcd, ts, was_fallback = lta_client.get_pcd_forecast(train_line=train_line)
-    cat = "Unknown"
+    cat = None
 
     try:
         values = pcd.get("value") or []
-        # The response is a list with one item containing Stations array
-        if not values or values[0] is None:
-            return make_risk("Unknown", source="fallback", is_fallback=True), pcd
+        if values and values[0] is not None:
+            stations_data = values[0].get("Stations") or []
 
-        stations_data = values[0].get("Stations") or []
+            # Find our station by code
+            for st in stations_data:
+                if st.get("Station") == station_code:
+                    intervals = st.get("Interval") or []
+                    if not intervals:
+                        break
 
-        # Find our station by code
-        for st in stations_data:
-            if st.get("Station") == station_code:
-                intervals = st.get("Interval") or []
-                if not intervals:
+                    # Find the interval matching the query time (or current time)
+                    # Compare by time-of-day only (HH:MM) since PCD intervals
+                    # have today's date but query_time might be tomorrow
+                    now = query_time or datetime.now(timezone(timedelta(hours=8)))  # SGT
+                    now_minutes = now.hour * 60 + now.minute
+                    best_interval = intervals[0]  # default to first
+                    for iv in intervals:
+                        try:
+                            iv_start = datetime.fromisoformat(iv["Start"])
+                            iv_minutes = iv_start.hour * 60 + iv_start.minute
+                            if iv_minutes <= now_minutes:
+                                best_interval = iv
+                            else:
+                                break
+                        except Exception:
+                            continue
+
+                    level = (best_interval.get("CrowdLevel") or "").strip().lower()
+                    if level in ("l", "low"):
+                        cat = "Low"
+                    elif level in ("m", "moderate", "medium", "mod"):
+                        cat = "Medium"
+                    elif level in ("h", "high"):
+                        cat = "High"
                     break
-
-                # Find the interval matching the query time (or current time)
-                # Compare by time-of-day only (HH:MM) since PCD intervals
-                # have today's date but query_time might be tomorrow
-                now = query_time or datetime.now(timezone(timedelta(hours=8)))  # SGT
-                now_minutes = now.hour * 60 + now.minute
-                best_interval = intervals[0]  # default to first
-                for iv in intervals:
-                    try:
-                        iv_start = datetime.fromisoformat(iv["Start"])
-                        iv_minutes = iv_start.hour * 60 + iv_start.minute
-                        if iv_minutes <= now_minutes:
-                            best_interval = iv
-                        else:
-                            break
-                    except Exception:
-                        continue
-
-                level = (best_interval.get("CrowdLevel") or "").strip().lower()
-                if level in ("l", "low"):
-                    cat = "Low"
-                elif level in ("m", "moderate", "medium", "mod"):
-                    cat = "Medium"
-                elif level in ("h", "high"):
-                    cat = "High"
-                break
     except Exception:
-        cat = "Unknown"
+        pass
+
+    # Fallback to time-based heuristic when PCD has no data
+    if cat is None:
+        cat = _time_based_crowding(query_time)
+        return make_risk(cat, source="heuristic", is_fallback=True), pcd
 
     return make_risk(cat, source="fallback" if was_fallback else "realtime", is_fallback=was_fallback, timestamp=str(ts) if ts else None), pcd
 
