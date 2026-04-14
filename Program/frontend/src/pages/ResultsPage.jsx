@@ -25,12 +25,13 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
   }
 
   async function handleCompare() {
-    if (!query?.origin || !query?.destination) return;
+    if (!query?.origin || !query?.destination || !selectedRoute || compareLoading) return;
     setCompareLoading(true);
     try {
       const data = await fetchCompare({
         origin: query.origin,
         destination: query.destination,
+        category: selectedRoute.category,
         wt_time: weights.time,
         wt_cost: weights.cost,
         wt_risk: weights.risk,
@@ -99,13 +100,15 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
         </span>
       </div>
 
-      {/* Compare button */}
-      <button onClick={handleCompare} disabled={compareLoading}
-        className="w-full mb-3 flex items-center justify-center gap-2 glass glass-hover py-2.5 px-4 rounded-xl text-[11px] font-semibold text-amber-400/80 font-display transition-all disabled:opacity-50 animate-fade-up delay-2">
+      {/* Compare button — requires a selected route for apples-to-apples comparison */}
+      <button onClick={handleCompare} disabled={compareLoading || !selectedRoute}
+        className={`w-full mb-3 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-[11px] font-semibold font-display transition-all animate-fade-up delay-2 ${selectedRoute ? 'glass glass-hover text-amber-400/80' : 'opacity-40 cursor-not-allowed bg-white/[0.03] text-slate-500'}`}>
         {compareLoading ? (
           <><Loader2 size={13} className="animate-spin" /> {t('results.comparing')}</>
+        ) : !selectedRoute ? (
+          <><Clock size={13} /> {t('results.selectToCompare')}</>
         ) : (
-          <><Clock size={13} /> {t('results.compareDepart')}</>
+          <><Clock size={13} /> {t('results.compareDepartCategory', { category: selectedRoute.category })}</>
         )}
       </button>
 

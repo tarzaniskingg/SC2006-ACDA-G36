@@ -93,10 +93,18 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
   }
 
   async function handleCompare() {
-    if (!query?.origin || !query?.destination || compareLoading) return;
+    if (!query?.origin || !query?.destination || !selectedRoute || compareLoading) return;
     setCompareLoading(true);
     try {
-      const data = await fetchCompare({ origin: query.origin, destination: query.destination, ...tripWeights });
+      const data = await fetchCompare({
+        origin: query.origin,
+        destination: query.destination,
+        category: selectedRoute.category,
+        wt_time: tripWeights.time,
+        wt_cost: tripWeights.cost,
+        wt_risk: tripWeights.risk,
+        wt_comfort: tripWeights.comfort,
+      });
       setCompareData(data);
     } catch {} finally { setCompareLoading(false); }
   }
@@ -272,12 +280,14 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
           {sheetState >= SHEET_RESULTS && (
             <div className="overflow-y-auto overscroll-contain px-4 pb-4 space-y-2.5"
               style={{ minHeight: 0 }}>
-              {/* Compare button */}
-              <button onClick={handleCompare} disabled={compareLoading}
-                className="w-full btn-ghost py-2 rounded-xl text-[11px] font-display font-medium flex items-center justify-center gap-1.5 shrink-0">
+              {/* Compare button — requires a selected route for apples-to-apples comparison */}
+              <button onClick={handleCompare} disabled={compareLoading || !selectedRoute}
+                className={`w-full py-2 rounded-xl text-[11px] font-display font-medium flex items-center justify-center gap-1.5 shrink-0 transition-all ${selectedRoute ? 'btn-ghost' : 'opacity-40 cursor-not-allowed bg-white/[0.03] text-slate-500'}`}>
                 {compareLoading
                   ? <><Loader2 size={12} className="animate-spin" /> {t('results.comparing')}</>
-                  : <><Clock size={12} /> {t('results.compareDepart')}</>}
+                  : !selectedRoute
+                    ? <><Clock size={12} /> {t('results.selectToCompare')}</>
+                    : <><Clock size={12} /> {t('results.compareDepartCategory', { category: selectedRoute.category })}</>}
               </button>
 
               {routes.map((route, i) => (

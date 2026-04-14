@@ -150,6 +150,7 @@ class CompareSlot(BaseModel):
 class CompareResponse(BaseModel):
     origin: str
     destination: str
+    category: Optional[str] = None
     slots: List[CompareSlot] = []
 
 

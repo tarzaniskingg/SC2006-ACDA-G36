@@ -136,16 +136,23 @@ export default function TimeCompare({ data, onClose }) {
           </button>
         </div>
 
-        <p className="text-[10px] text-slate-500 font-display -mt-2">
-          {data.origin} &rarr; {data.destination}
-        </p>
+        <div className="-mt-2 space-y-0.5">
+          <p className="text-[10px] text-slate-500 font-display">
+            {data.origin} &rarr; {data.destination}
+          </p>
+          {data.category && (
+            <p className="inline-block text-[10px] font-semibold text-amber-400/80 bg-amber-400/10 px-2 py-0.5 rounded-md font-display">
+              {data.category}
+            </p>
+          )}
+        </div>
 
         {groups.map((g, i) => (
           <GroupTable key={i} groupName={g.name} slots={g.slots} t={t} />
         ))}
 
         <p className="text-[9px] text-slate-500 text-center font-display pt-1">
-          {t('time.footnote')}
+          {data.category ? t('time.footnoteCategory') : t('time.footnote')}
         </p>
       </div>
     </div>

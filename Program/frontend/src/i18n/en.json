@@ -39,6 +39,8 @@
   "results.refresh": "Refresh",
   "results.viewOnMap": "View on Map",
   "results.compareDepart": "Compare Departure Times",
+  "results.compareDepartCategory": "Compare {{category}} Departure Times",
+  "results.selectToCompare": "Select a route to compare",
   "results.comparing": "Comparing...",
 
   "risk.low": "Low",
@@ -135,6 +137,7 @@
   "time.cost": "Cost",
   "time.crowding": "Crowding",
   "time.footnote": "Best route per time slot · Lower score is better · All times are future departures",
+  "time.footnoteCategory": "Same route type across departure times · Lower score is better",
 
   "freq.every": "Every {{min}}min",
   "duration.min": "min",

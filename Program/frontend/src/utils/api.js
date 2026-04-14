@@ -60,6 +60,7 @@ export async function fetchCompare(params) {
   const query = new URLSearchParams();
   query.set('origin', params.origin);
   query.set('destination', params.destination);
+  if (params.category != null) query.set('category', params.category);
   if (params.include_transit != null) query.set('include_transit', params.include_transit);
   if (params.include_driving != null) query.set('include_driving', params.include_driving);
   if (params.wt_time != null) query.set('wt_time', params.wt_time);

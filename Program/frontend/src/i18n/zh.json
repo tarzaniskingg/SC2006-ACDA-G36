@@ -39,6 +39,8 @@
   "results.refresh": "刷新",
   "results.viewOnMap": "在地图上查看",
   "results.compareDepart": "比较出发时间",
+  "results.compareDepartCategory": "比较 {{category}} 出发时间",
+  "results.selectToCompare": "选择路线以比较",
   "results.comparing": "比较中...",
 
   "risk.low": "低",
@@ -135,6 +137,7 @@
   "time.cost": "费用",
   "time.crowding": "拥挤度",
   "time.footnote": "每个时段的最佳路线 · 分数越低越好 · 所有时间为未来出发时间",
+  "time.footnoteCategory": "相同路线类型跨出发时间 · 分数越低越好",
 
   "freq.every": "每 {{min}} 分钟",
   "duration.min": "分钟",

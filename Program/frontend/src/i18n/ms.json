@@ -39,6 +39,8 @@
   "results.refresh": "Muat Semula",
   "results.viewOnMap": "Lihat di Peta",
   "results.compareDepart": "Bandingkan Masa Berlepas",
+  "results.compareDepartCategory": "Bandingkan Masa Berlepas {{category}}",
+  "results.selectToCompare": "Pilih laluan untuk membandingkan",
   "results.comparing": "Membandingkan...",
 
   "risk.low": "Rendah",
@@ -135,6 +137,7 @@
   "time.cost": "Kos",
   "time.crowding": "Kesesakan",
   "time.footnote": "Laluan terbaik setiap slot masa · Skor lebih rendah lebih baik · Semua masa adalah berlepas masa depan",
+  "time.footnoteCategory": "Jenis laluan yang sama merentas masa berlepas · Skor lebih rendah lebih baik",
 
   "freq.every": "Setiap {{min}} min",
   "duration.min": "min",

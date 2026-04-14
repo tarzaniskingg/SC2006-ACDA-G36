@@ -39,6 +39,8 @@
   "results.refresh": "புதுப்பிக்க",
   "results.viewOnMap": "வரைபடத்தில் காண்க",
   "results.compareDepart": "புறப்படும் நேரங்களை ஒப்பிடுக",
+  "results.compareDepartCategory": "{{category}} புறப்படும் நேரங்களை ஒப்பிடுக",
+  "results.selectToCompare": "ஒப்பிட ஒரு பாதையை தேர்ந்தெடுக்கவும்",
   "results.comparing": "ஒப்பிடுகிறது...",
 
   "risk.low": "குறைவு",
@@ -135,6 +137,7 @@
   "time.cost": "செலவு",
   "time.crowding": "நெரிசல்",
   "time.footnote": "ஒவ்வொரு நேர இடைவெளிக்கும் சிறந்த பாதை · குறைந்த மதிப்பெண் சிறந்தது · எல்லா நேரங்களும் எதிர்கால புறப்பாடுகள்",
+  "time.footnoteCategory": "புறப்படும் நேரங்களில் ஒரே பாதை வகை · குறைந்த மதிப்பெண் சிறந்தது",
 
   "freq.every": "ஒவ்வொரு {{min}} நிமிடம்",
   "duration.min": "நிமி",

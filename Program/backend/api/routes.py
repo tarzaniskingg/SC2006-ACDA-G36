@@ -497,8 +497,13 @@ def _build_compare_slots() -> List[dict]:
 def _run_routes_for_slot(
     origin: str, destination: str, slot_dt: datetime,
     modes: List[str], weights: dict,
+    filter_category: Optional[str] = None,
 ) -> List[dict]:
-    """Run the full route pipeline for a single departure time slot."""
+    """Run the full route pipeline for a single departure time slot.
+
+    When *filter_category* is set, only candidates whose category matches
+    are kept before ranking (apples-to-apples comparison).
+    """
     dep_str = slot_dt.isoformat()
     raw_routes = get_directions(origin, destination, modes=modes,
                                 departure_time=dep_str, alternatives=True)
@@ -516,35 +521,71 @@ def _run_routes_for_slot(
         crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
         route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
         start_loc = leg.get("start_location") or {}
-        cost_info = estimate_cost(
-            distance_m, duration_s, "driving" if rmode == "driving" else "transit",
-            departure_time=slot_dt,
-            origin_lat=start_loc.get("lat"),
-            origin_lng=start_loc.get("lng"),
-        )
         walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
         time_min = round(duration_s / 60.0, 1)
         realistic_time_min = compute_realistic_time(time_min, route_steps)
 
-        candidates.append({
-            "category": "Taxi/Private Hire" if rmode == "driving" else "Public Transit",
+        shared_base = {
             "path_summary": path_summary or ("Drive" if rmode == "driving" else ""),
             "time_min": time_min,
-            "realistic_time_min": realistic_time_min,
-            "cost_est": cost_info["total"],
-            "cost_breakdown": cost_info,
             "distance_km": round(distance_m / 1000.0, 2),
             "walk_min": round(walk_min, 1),
             "transfers": transfers if rmode != "driving" else 0,
             "steps": [s.model_dump() for s in route_steps],
             "risk_crowding_cat": crowd_cat.value,
             "risk_crowding_num": crowd_num,
-            "risk_delay_cat": delay_cat.value,
-            "risk_delay_num": delay_num,
-            "risk_cat": max(crowd_cat.value, delay_cat.value,
-                            key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
             "uses_fallback": uses_fallback,
-        })
+        }
+
+        if rmode == "driving":
+            # Taxi candidate
+            taxi_cost = estimate_cost(
+                distance_m, duration_s, "taxi",
+                departure_time=slot_dt,
+                origin_lat=start_loc.get("lat"),
+                origin_lng=start_loc.get("lng"),
+            )
+            candidates.append({
+                **shared_base,
+                "category": "Taxi",
+                "realistic_time_min": realistic_time_min,
+                "cost_est": taxi_cost["total"],
+                "cost_breakdown": taxi_cost,
+                "risk_delay_cat": delay_cat.value,
+                "risk_delay_num": delay_num,
+                "risk_cat": max(crowd_cat.value, delay_cat.value,
+                                key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
+            })
+            # Drive (own car) candidate
+            car_cost = estimate_cost(distance_m, duration_s, "owncar")
+            candidates.append({
+                **shared_base,
+                "category": "Drive",
+                "realistic_time_min": realistic_time_min,
+                "cost_est": car_cost["total"],
+                "cost_breakdown": car_cost,
+                "risk_delay_cat": delay_cat.value,
+                "risk_delay_num": delay_num,
+                "risk_cat": max(crowd_cat.value, delay_cat.value,
+                                key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
+            })
+        else:
+            # Transit candidate
+            transit_cost = estimate_cost(distance_m, duration_s, "transit")
+            candidates.append({
+                **shared_base,
+                "category": "Public Transit",
+                "realistic_time_min": realistic_time_min,
+                "cost_est": transit_cost["total"],
+                "cost_breakdown": transit_cost,
+                "risk_delay_cat": delay_cat.value,
+                "risk_delay_num": delay_num,
+                "risk_cat": max(crowd_cat.value, delay_cat.value,
+                                key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
+            })
+
+    if filter_category:
+        candidates = [c for c in candidates if c["category"] == filter_category]
 
     if candidates:
         ranked = rank_routes(candidates, weights)
@@ -557,6 +598,7 @@ def _run_routes_for_slot(
 def compare_departure_times(
     origin: str,
     destination: str,
+    category: Optional[str] = None,
     include_transit: Optional[bool] = None,
     include_driving: Optional[bool] = None,
     wt_time: float = 0.25,
@@ -568,10 +610,20 @@ def compare_departure_times(
     Compare routes across 3 time groups: Morning Rush, Around Now, Evening Rush.
     All departure times are guaranteed to be in the future so Google returns
     time-specific results.
+
+    When *category* is provided (e.g. "Public Transit", "Taxi", "Drive"),
+    only routes of that category are returned so the comparison is
+    apples-to-apples across departure times.
     """
     weights = {"time": wt_time, "cost": wt_cost, "risk": wt_risk, "comfort": wt_comfort}
 
-    if include_transit is not None or include_driving is not None:
+    # Derive transport modes from the selected category when provided
+    if category:
+        if category == "Public Transit":
+            modes = ["transit"]
+        else:                       # Taxi or Drive
+            modes = ["driving"]
+    elif include_transit is not None or include_driving is not None:
         modes = []
         if include_transit is not False:
             modes.append("transit")
@@ -585,12 +637,13 @@ def compare_departure_times(
 
     for group in groups:
         for time_label, slot_dt in group["times"]:
-            top = _run_routes_for_slot(origin, destination, slot_dt, modes, weights)
+            top = _run_routes_for_slot(origin, destination, slot_dt, modes, weights,
+                                       filter_category=category)
             best_score = top[0]["score"] if top else None
             display_label = f"{group['label']}: {time_label}"
             slots.append(CompareSlot(time=display_label, routes=top, best_score=best_score))
 
-    return CompareResponse(origin=origin, destination=destination, slots=slots)
+    return CompareResponse(origin=origin, destination=destination, category=category, slots=slots)
 
 
 # ---------------------------------------------------------------------------
