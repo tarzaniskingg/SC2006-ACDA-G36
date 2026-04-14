@@ -508,6 +508,8 @@ def assess_segments_from_google_route(route: Dict, departure_time: Optional[date
     except Exception:
         return segments, bus_frequencies
 
+    # Collect transit steps first, then assess them all in parallel
+    transit_steps = []
     for step in steps:
         if step.get("travel_mode") != "TRANSIT":
             continue
@@ -520,10 +522,12 @@ def assess_segments_from_google_route(route: Dict, departure_time: Optional[date
         dep_loc = dep_stop.get("location") or {}
         dep_lat = dep_loc.get("lat")
         dep_lng = dep_loc.get("lng")
-
         line = details.get("line", {})
         service_no = line.get("short_name") or line.get("name") or ""
+        transit_steps.append((vehicle, dep_name, arr_name, dep_lat, dep_lng, service_no))
 
+    def _assess_one_segment(info):
+        vehicle, dep_name, arr_name, dep_lat, dep_lng, service_no = info
         freq_data = None
         if vehicle == "BUS":
             crowd, _ = _bus_crowding_for_stop_and_service(dep_name, service_no, dep_lat, dep_lng)
@@ -535,7 +539,6 @@ def assess_segments_from_google_route(route: Dict, departure_time: Optional[date
         else:
             crowd = make_risk("Unknown")
             delay = make_risk("Unknown")
-
         seg = SegmentAssessment(
             mode=vehicle or "TRANSIT",
             from_name=dep_name,
@@ -543,7 +546,14 @@ def assess_segments_from_google_route(route: Dict, departure_time: Optional[date
             crowding=crowd,
             delay=delay,
         )
-        segments.append(seg)
-        bus_frequencies.append(freq_data)
+        return seg, freq_data
+
+    if transit_steps:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(len(transit_steps), 6)) as pool:
+            results = list(pool.map(_assess_one_segment, transit_steps))
+        for seg, freq_data in results:
+            segments.append(seg)
+            bus_frequencies.append(freq_data)
 
     return segments, bus_frequencies
