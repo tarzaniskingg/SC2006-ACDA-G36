@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, MapPin, Clock, Loader2, RefreshCw } from 'lucide-react';
@@ -11,6 +11,7 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
   const navigate = useNavigate();
   const [compareData, setCompareData] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
+  const [comparePrefetch, setComparePrefetch] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const routes = results?.routes || [];
   const trip = results?.trip;
@@ -18,27 +19,46 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
     ? { time: trip.wt_time, cost: trip.wt_cost, risk: trip.wt_risk, comfort: trip.wt_comfort }
     : { time: 0.25, cost: 0.25, risk: 0.25, comfort: 0.25 };
 
+  // Pre-fetch compare data when route is selected
+  const selectedCategory = selectedRoute?.category;
+  useEffect(() => {
+    if (!query?.origin || !query?.destination || !selectedCategory) return;
+    if (comparePrefetch?.category === selectedCategory) return;
+    let cancelled = false;
+    setCompareLoading(true);
+    fetchCompare({
+      origin: query.origin, destination: query.destination,
+      category: selectedCategory,
+      wt_time: weights.time, wt_cost: weights.cost,
+      wt_risk: weights.risk, wt_comfort: weights.comfort,
+    }).then(data => { if (!cancelled) setComparePrefetch(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setCompareLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedCategory, query?.origin, query?.destination]);
+
   async function handleRefresh() {
     if (!onRefresh || refreshing) return;
     setRefreshing(true);
     try { await onRefresh(); } catch {} finally { setRefreshing(false); }
   }
 
-  async function handleCompare() {
-    if (!query?.origin || !query?.destination || !selectedRoute || compareLoading) return;
+  function handleCompare() {
+    if (!selectedRoute) return;
+    if (comparePrefetch?.category === selectedRoute.category) {
+      setCompareData(comparePrefetch);
+      return;
+    }
+    if (!query?.origin || !query?.destination || compareLoading) return;
     setCompareLoading(true);
-    try {
-      const data = await fetchCompare({
-        origin: query.origin,
-        destination: query.destination,
-        category: selectedRoute.category,
-        wt_time: weights.time,
-        wt_cost: weights.cost,
-        wt_risk: weights.risk,
-        wt_comfort: weights.comfort,
-      });
-      setCompareData(data);
-    } catch {} finally { setCompareLoading(false); }
+    fetchCompare({
+      origin: query.origin, destination: query.destination,
+      category: selectedRoute.category,
+      wt_time: weights.time, wt_cost: weights.cost,
+      wt_risk: weights.risk, wt_comfort: weights.comfort,
+    }).then(data => setCompareData(data))
+      .catch(() => {})
+      .finally(() => setCompareLoading(false));
   }
 
   if (!routes.length) {
@@ -100,18 +120,6 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
         </span>
       </div>
 
-      {/* Compare button — requires a selected route for apples-to-apples comparison */}
-      <button onClick={handleCompare} disabled={compareLoading || !selectedRoute}
-        className={`w-full mb-3 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-[11px] font-semibold font-display transition-all animate-fade-up delay-2 ${selectedRoute ? 'glass glass-hover text-amber-400/80' : 'opacity-40 cursor-not-allowed bg-white/[0.03] text-slate-500'}`}>
-        {compareLoading ? (
-          <><Loader2 size={13} className="animate-spin" /> {t('results.comparing')}</>
-        ) : !selectedRoute ? (
-          <><Clock size={13} /> {t('results.selectToCompare')}</>
-        ) : (
-          <><Clock size={13} /> {t('results.compareDepartCategory', { category: selectedRoute.category })}</>
-        )}
-      </button>
-
       {/* Route cards */}
       <div className="space-y-3">
         {routes.map((route, i) => (
@@ -132,13 +140,21 @@ export default function ResultsPage({ results, query, selectedRoute, onSelectRou
         <TimeCompare data={compareData} onClose={() => setCompareData(null)} />
       )}
 
-      {/* Map CTA */}
+      {/* Floating buttons — Map left, Compare right */}
       {selectedRoute && (
-        <div className="fixed bottom-20 left-4 right-4 z-40 max-w-lg mx-auto">
+        <div className="fixed bottom-20 left-4 right-4 z-40 max-w-lg mx-auto flex items-center gap-2">
           <button onClick={() => navigate('/map')}
-            className="w-full btn-primary py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 font-display font-semibold text-sm"
+            className="flex-1 btn-primary py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 font-display font-semibold text-sm"
             style={{ boxShadow: '0 4px 30px rgba(232,152,58,0.25)' }}>
             <MapPin size={17} /> {t('results.viewOnMap')}
+          </button>
+          <button onClick={handleCompare} disabled={compareLoading}
+            className="flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg font-display font-semibold text-[11px] transition-all active:scale-95 bg-amber-500/90 text-slate-900 hover:bg-amber-400"
+            style={{ boxShadow: '0 4px 24px rgba(232,152,58,0.35)' }}>
+            {compareLoading
+              ? <Loader2 size={13} className="animate-spin" />
+              : <Clock size={13} />}
+            {t('results.compareDepart')}
           </button>
         </div>
       )}

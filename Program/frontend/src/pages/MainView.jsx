@@ -36,12 +36,37 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
   const [error, setError] = useState(null);
   const [compareData, setCompareData] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
+  const [comparePrefetch, setComparePrefetch] = useState(null); // prefetched data keyed by category
 
   const routes = results?.routes || [];
   const trip = results?.trip;
   const tripWeights = trip
     ? { time: trip.wt_time, cost: trip.wt_cost, risk: trip.wt_risk, comfort: trip.wt_comfort }
     : weights;
+
+  // Pre-fetch compare data in background when a route is selected
+  const selectedCategory = selectedRoute?.category;
+  useEffect(() => {
+    if (!query?.origin || !query?.destination || !selectedCategory) return;
+    // Skip if we already have prefetched data for this category
+    if (comparePrefetch?.category === selectedCategory) return;
+    let cancelled = false;
+    setCompareLoading(true);
+    fetchCompare({
+      origin: query.origin,
+      destination: query.destination,
+      category: selectedCategory,
+      wt_time: tripWeights.time,
+      wt_cost: tripWeights.cost,
+      wt_risk: tripWeights.risk,
+      wt_comfort: tripWeights.comfort,
+    }).then(data => {
+      if (!cancelled) setComparePrefetch(data);
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setCompareLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedCategory, query?.origin, query?.destination]);
 
   // Bottom sheet takes ~55vh when open. Convert to pixels for map padding.
   // window.innerHeight * 0.55 gives us roughly how much the sheet covers.
@@ -92,21 +117,27 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
     try { await onRefresh(); } catch {} finally { setRefreshing(false); }
   }
 
-  async function handleCompare() {
-    if (!query?.origin || !query?.destination || !selectedRoute || compareLoading) return;
+  function handleCompare() {
+    if (!selectedRoute) return;
+    // Use prefetched data if available for this category
+    if (comparePrefetch?.category === selectedRoute.category) {
+      setCompareData(comparePrefetch);
+      return;
+    }
+    // Otherwise fetch now (shouldn't normally happen since useEffect prefetches)
+    if (!query?.origin || !query?.destination || compareLoading) return;
     setCompareLoading(true);
-    try {
-      const data = await fetchCompare({
-        origin: query.origin,
-        destination: query.destination,
-        category: selectedRoute.category,
-        wt_time: tripWeights.time,
-        wt_cost: tripWeights.cost,
-        wt_risk: tripWeights.risk,
-        wt_comfort: tripWeights.comfort,
-      });
-      setCompareData(data);
-    } catch {} finally { setCompareLoading(false); }
+    fetchCompare({
+      origin: query.origin,
+      destination: query.destination,
+      category: selectedRoute.category,
+      wt_time: tripWeights.time,
+      wt_cost: tripWeights.cost,
+      wt_risk: tripWeights.risk,
+      wt_comfort: tripWeights.comfort,
+    }).then(data => setCompareData(data))
+      .catch(() => {})
+      .finally(() => setCompareLoading(false));
   }
 
   const canSearch = origin.trim().length >= 2 && destination.trim().length >= 2 &&
@@ -280,16 +311,6 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
           {sheetState >= SHEET_RESULTS && (
             <div className="overflow-y-auto overscroll-contain px-4 pb-4 space-y-2.5"
               style={{ minHeight: 0 }}>
-              {/* Compare button — requires a selected route for apples-to-apples comparison */}
-              <button onClick={handleCompare} disabled={compareLoading || !selectedRoute}
-                className={`w-full py-2 rounded-xl text-[11px] font-display font-medium flex items-center justify-center gap-1.5 shrink-0 transition-all ${selectedRoute ? 'btn-ghost' : 'opacity-40 cursor-not-allowed bg-white/[0.03] text-slate-500'}`}>
-                {compareLoading
-                  ? <><Loader2 size={12} className="animate-spin" /> {t('results.comparing')}</>
-                  : !selectedRoute
-                    ? <><Clock size={12} /> {t('results.selectToCompare')}</>
-                    : <><Clock size={12} /> {t('results.compareDepartCategory', { category: selectedRoute.category })}</>}
-              </button>
-
               {routes.map((route, i) => (
                 <RouteCard
                   key={i}
@@ -303,6 +324,17 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
             </div>
           )}
         </div>
+      )}
+
+      {/* Floating compare button — bottom-right, always visible when routes exist */}
+      {routes.length > 0 && selectedRoute && (
+        <button onClick={handleCompare} disabled={compareLoading}
+          className="fixed bottom-20 right-4 z-40 flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg font-display font-semibold text-[11px] transition-all active:scale-95 bg-amber-500/90 text-slate-900 hover:bg-amber-400"
+          style={{ boxShadow: '0 4px 24px rgba(232,152,58,0.35)' }}>
+          {compareLoading
+            ? <><Loader2 size={13} className="animate-spin" /> {t('results.comparing')}</>
+            : <><Clock size={13} /> {t('results.compareDepartCategory', { category: selectedRoute.category })}</>}
+        </button>
       )}
 
       {/* Time comparison modal */}
