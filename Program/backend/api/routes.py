@@ -46,9 +46,18 @@ def _process_one_route(r: dict, dt: Optional[datetime]) -> List[dict]:
         if not legs:
             return []
         leg = legs[0]
-        duration_s = (leg.get("duration") or {}).get("value", 0)
         distance_m = (leg.get("distance") or {}).get("value", 0)
         mode = r.get("requested_mode", "transit")
+
+        # Use duration_in_traffic for driving (real traffic-aware ETA),
+        # fall back to duration (historical average)
+        if mode == "driving" and leg.get("duration_in_traffic"):
+            duration_s = leg["duration_in_traffic"]["value"]
+        else:
+            duration_s = (leg.get("duration") or {}).get("value", 0)
+
+        # Extract Google's fare for transit (real TransitLink pricing)
+        google_fare = r.get("fare")
 
         # Assess segments (now returns bus frequencies too)
         segs, bus_freqs = assess_segments_from_google_route(r, departure_time=dt)
@@ -190,9 +199,20 @@ def _process_one_route(r: dict, dt: Optional[datetime]) -> List[dict]:
                 "parking": parking_data,
             })
         else:
-            # Transit candidate
-            transit_cost = estimate_cost(distance_m, duration_s, "transit",
-                                         departure_time=dt)
+            # Transit candidate — prefer Google's fare (real TransitLink pricing
+            # with early-bird/off-peak discounts), fall back to distance estimate
+            if google_fare and google_fare.get("value"):
+                transit_cost = {
+                    "total": round(google_fare["value"], 2),
+                    "google_fare": round(google_fare["value"], 2),
+                    "currency": google_fare.get("currency", "SGD"),
+                    "distance_km": round(distance_m / 1000.0, 2),
+                    "mode": "transit",
+                    "source": "google",
+                }
+            else:
+                transit_cost = estimate_cost(distance_m, duration_s, "transit",
+                                             departure_time=dt)
             results.append({
                 **shared_base,
                 "category": "Public Transit",
@@ -526,9 +546,16 @@ def _run_routes_for_slot(
         if not legs:
             continue
         leg = legs[0]
-        duration_s = (leg.get("duration") or {}).get("value", 0)
         distance_m = (leg.get("distance") or {}).get("value", 0)
         rmode = r.get("requested_mode", "transit")
+
+        # Use traffic-aware duration for driving
+        if rmode == "driving" and leg.get("duration_in_traffic"):
+            duration_s = leg["duration_in_traffic"]["value"]
+        else:
+            duration_s = (leg.get("duration") or {}).get("value", 0)
+
+        google_fare = r.get("fare")
 
         segs, bus_freqs = assess_segments_from_google_route(r, departure_time=slot_dt)
         crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
@@ -583,9 +610,19 @@ def _run_routes_for_slot(
                                 key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
             })
         else:
-            # Transit candidate
-            transit_cost = estimate_cost(distance_m, duration_s, "transit",
-                                         departure_time=slot_dt)
+            # Transit candidate — prefer Google fare, fall back to estimate
+            if google_fare and google_fare.get("value"):
+                transit_cost = {
+                    "total": round(google_fare["value"], 2),
+                    "google_fare": round(google_fare["value"], 2),
+                    "currency": google_fare.get("currency", "SGD"),
+                    "distance_km": round(distance_m / 1000.0, 2),
+                    "mode": "transit",
+                    "source": "google",
+                }
+            else:
+                transit_cost = estimate_cost(distance_m, duration_s, "transit",
+                                             departure_time=slot_dt)
             candidates.append({
                 **shared_base,
                 "category": "Public Transit",
@@ -718,31 +755,6 @@ def crowding_heatmap(station_name: str, line: Optional[str] = None):
 
     return CrowdingHeatmapResponse(station=station_name, line=train_line, intervals=intervals_out)
 
-
-@router.get("/debug/pcd")
-def debug_pcd(train_line: str = "EWL"):
-    """Temporary: return raw PCD response for debugging."""
-    from ..services.assessment import _lookup_station
-    pcd, ts, was_fallback = lta_client.get_pcd_forecast(train_line=train_line)
-    # Summarise what we got
-    values = pcd.get("value") or []
-    stations = []
-    if values and values[0] is not None:
-        for st in (values[0].get("Stations") or []):
-            stations.append({
-                "Station": st.get("Station"),
-                "num_intervals": len(st.get("Interval") or []),
-                "sample_intervals": (st.get("Interval") or [])[:3],
-            })
-    return {
-        "train_line": train_line,
-        "was_fallback": was_fallback,
-        "timestamp": ts,
-        "top_level_keys": list(pcd.keys()) if isinstance(pcd, dict) else str(type(pcd)),
-        "num_value_items": len(values),
-        "num_stations": len(stations),
-        "stations_sample": stations[:5],
-    }
 
 
 # --- Minimal Google Maps passthrough (no fallbacks) ---

@@ -59,13 +59,6 @@ def get_carpark_availability():
     return {"value": _paginated_get("CarParkAvailabilityv2")}
 
 
-def get_est_travel_time():
-    return get("EstTravelTimes")
-
-
-def get_taxi_availability():
-    return get("Taxi-Availability")
-
 
 def get_pcd_forecast(train_line=None):
     params = {}

@@ -54,39 +54,6 @@ def get_train_service_alerts() -> Tuple[Dict[str, Any], float, bool]:
     )
 
 
-def get_est_travel_times() -> Tuple[Dict[str, Any], float, bool]:
-    key = "est_travel_times"
-    cached_val, ts, expired = _get_cached(key)
-    if cached_val and not expired:
-        return cached_val, ts, False
-    try:
-        import lta_api
-
-        data = lta_api.get_est_travel_time()
-        val, ts, _ = _set_cache(key, data, get_settings().ttl_est_travel)
-        return val, ts, False
-    except Exception:
-        if cached_val is not None:
-            return cached_val, ts, True
-        return {}, 0.0, True
-
-
-def get_taxi_availability() -> Tuple[Dict[str, Any], float, bool]:
-    key = "taxi_availability"
-    cached_val, ts, expired = _get_cached(key)
-    if cached_val and not expired:
-        return cached_val, ts, False
-    try:
-        import lta_api
-
-        data = lta_api.get_taxi_availability()
-        val, ts, _ = _set_cache(key, data, get_settings().ttl_taxi)
-        return val, ts, False
-    except Exception:
-        if cached_val is not None:
-            return cached_val, ts, True
-        return {}, 0.0, True
-
 
 def get_traffic_speed_bands() -> Tuple[Dict[str, Any], float, bool]:
     import lta_api
