@@ -176,25 +176,27 @@ Priority: High
 
 - 3.2.1. The system shall retrieve real-time transport data relevant to the current route search from the following sources:
   - LTA Bus Arrival API (bus crowding and frequency data)
-  - LTA Passenger Crowd Data (PCD) Forecast (MRT crowding data)
+  - LTA PCD Real Time API (real-time MRT station crowding levels)
+  - LTA PCD Forecast API (forecasted MRT station crowding by 30-min interval)
   - LTA Train Service Alerts (MRT delay/disruption data)
-  - LTA Traffic Speed Bands (driving congestion data)
   - LTA Carpark Availability (parking data for Drive routes)
   - NEA 2-Hour Weather Forecast (weather conditions along route)
-- 3.2.2. If Public Transit is enabled, the system shall retrieve public-transit-related data including MRT crowdedness data, MRT service alert information, and bus arrival data.
-- 3.2.3. If Taxi/Drive is enabled, the system shall retrieve driving-related data including traffic speed bands, ERP gantry data, and carpark availability at the destination.
+  - Google Directions API (route options with traffic-aware driving duration and transit fare data)
+- 3.2.2. If Public Transit is enabled, the system shall retrieve public-transit-related data including MRT crowdedness data (PCD Real Time, with PCD Forecast and time-based heuristic as fallbacks), MRT service alert information, and bus arrival data.
+- 3.2.3. If Taxi/Drive is enabled, the system shall retrieve driving-related data including traffic-aware duration from Google (duration_in_traffic), ERP gantry data, and carpark availability at the destination.
 - 3.2.4. The system shall retrieve only the data sources required for the current route search.
+- 3.2.5. The system shall enforce a global rate limit on LTA API calls (max ~6 requests/second) to stay within quota limits, using a per-call lock with minimum interval.
 
 **FR-3.3. Data Freshness Compliance**
 
 - 3.3.1. The system shall associate a retrieval timestamp with each retrieved real-time transport data source via the cache layer.
 - 3.3.2. The system shall evaluate whether each data source meets predefined TTL-based freshness thresholds:
   - Bus Arrival: 30 seconds
-  - PCD Forecast (MRT crowding): 600 seconds (10 minutes)
+  - PCD Real Time (MRT crowding): 60 seconds
+  - PCD Forecast (MRT crowding): 21,600 seconds (6 hours; updated daily by LTA)
   - Train Service Alerts: 60 seconds
-  - Traffic Speed Bands: 300 seconds (5 minutes)
   - Carpark Availability: 300 seconds (5 minutes)
-  - Taxi Availability: 60 seconds
+  - NEA Weather Forecast: 600 seconds (10 minutes)
 - 3.3.3. If a data source does not meet the freshness criteria (TTL expired), the system shall treat it as outdated and apply fallback handling in accordance with Section 4.5.
 
 **FR-3.4. Fallback Data Compliance**
@@ -210,13 +212,14 @@ Priority: High
   - SEA (Seats Available) -> Low
   - SDA (Standing Available) -> Medium
   - LSD (Limited Standing) -> High
-- 3.5.2. For MRT segments, the system shall compute a crowding indicator from the LTA PCD Forecast `CrowdLevel` field, matched to the closest time interval, using the following mapping:
-  - "l" / "low" -> Low
-  - "m" / "moderate" / "medium" -> Medium
-  - "h" / "high" -> High
-- 3.5.3. The system shall categorise each crowding indicator as Low, Medium, High, or Unknown.
-- 3.5.4. If crowding data is unavailable for a relevant segment, the system shall mark the indicator as Unknown.
-- 3.5.5. The system shall pass crowding indicators to downstream route assessment and display functions.
+- 3.5.2. For MRT segments, the system shall attempt three crowding sources in order:
+  - (a) LTA PCD Real Time API — returns the current crowding level per station (l=Low, m=Medium, h=High). Used as the primary source.
+  - (b) LTA PCD Forecast API — returns forecasted crowding by 30-min interval matched to the query time. Used when real-time data is unavailable.
+  - (c) Time-based heuristic — uses well-known Singapore MRT peak patterns (weekday 7-9:30am and 5:30-8pm = High, shoulder periods = Medium, off-peak and weekends = Low). Used when both PCD APIs return no data.
+- 3.5.3. The system shall use the first source in the above chain that returns valid data.
+- 3.5.4. The system shall categorise each crowding indicator as Low, Medium, High, or Unknown.
+- 3.5.5. If crowding data is unavailable from all sources for a relevant segment, the system shall mark the indicator as Unknown.
+- 3.5.6. The system shall pass crowding indicators to downstream route assessment and display functions.
 
 **FR-3.6. Assess Delay Conditions**
 
@@ -226,10 +229,10 @@ Priority: High
   - Status = 2 (disruption) on a different line: Low
   - Status = 2 (disruption) with no specific line identified: Medium (precautionary)
 - 3.6.2. For bus segments, the system shall assign a default delay indicator of Low.
-- 3.6.3. For driving/taxi segments, the system shall compute a delay indicator from the LTA Traffic Speed Bands API based on average speed near the route:
-  - Average speed >= 6: Low
-  - Average speed >= 3: Medium
-  - Average speed < 3: High
+- 3.6.3. For driving/taxi segments, the system shall derive a delay indicator from Google's traffic data by comparing the baseline duration to the traffic-aware duration (duration_in_traffic):
+  - Ratio >= 1.5 (50%+ slower than normal): High
+  - Ratio >= 1.2 (20-50% slower): Medium
+  - Ratio < 1.2 (within 20% of normal): Low
 - 3.6.4. The system shall categorise each delay indicator as Low, Medium, High, or Unknown.
 - 3.6.5. If delay data is unavailable for a relevant segment, the system shall mark the indicator as Unknown.
 - 3.6.6. The system shall pass delay indicators to downstream route assessment and display functions.
@@ -301,7 +304,7 @@ Priority: High
 
 **FR-4.4. Route Attribute Assignment**
 
-- 4.4.1. For each generated route, the system shall assign an estimated travel time derived from the Google Directions API duration, converted to minutes.
+- 4.4.1. For each generated route, the system shall assign an estimated travel time derived from the Google Directions API. For driving routes, the system shall use `duration_in_traffic` (real-time traffic-aware ETA) when available, falling back to `duration` (historical average). For transit routes, the system shall use `duration`.
 - 4.4.2. For each generated route, the system shall compute a realistic travel time by adding a bus wait buffer of `0.5 * miss_penalty_min` per bus step (modelling a 50% chance of missing the bus).
 - 4.4.3. For Drive routes, the system shall add a parking search time penalty to the realistic travel time: +10 minutes if nearby parking is full, +5 minutes if limited.
 - 4.4.4. For each generated route, the system shall compute a route-level crowding risk level by aggregating segment-level crowding risk values using a worst-case (maximum) rule:
@@ -311,7 +314,7 @@ Priority: High
 - 4.4.5. For each generated route, the system shall compute a route-level delay risk level by aggregating segment-level delay risk values using the same worst-case rule as crowding (FR-4.4.4).
 - 4.4.6. For each generated route, the system shall determine the number of transfers as the count of transit segments minus one (minimum 0).
 - 4.4.7. For each generated route, the system shall determine the estimated travel cost:
-  - Public Transit: Singapore adult card distance-based fare (TransitLink fare table), ranging from $0.99 (up to 3.2 km) to $2.20 (over 40.2 km).
+  - Public Transit: The system shall prefer Google's `fare` field when available (real TransitLink pricing including early-bird and off-peak discounts, multi-modal fare caps). When Google fare data is unavailable, the system shall fall back to a distance-based fare table (TransitLink rates, $0.99-$2.20) with time-of-day adjustments: $0.50 early-bird discount (before 7:45am weekdays), $0.50 off-peak discount (9:30am-4pm weekdays and all day weekends).
   - Taxi: ComfortDelGro 2026 metered fare with $4.60 flag-down (first 1 km), $0.27 per 400m up to 10 km, $0.27 per 350m after 10 km, $0.27 per 45 seconds waiting (assuming 20% idle time), plus applicable surcharges (25% peak, 50% late-night, $2.30-$3.30 booking fee, $6-$8 Changi Airport surcharge), plus ERP charges.
   - Own Car (Drive): Fuel cost at $0.12/km, plus ERP charges.
 - 4.4.8. For Drive routes, the system shall inflate the walking time when parking is scarce: +5 minutes if parking is full, +2 minutes if limited.
