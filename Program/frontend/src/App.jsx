@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { useState, useCallback, useEffect } from 'react'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import MainView from './pages/MainView'
 import ScoringPage from './pages/ScoringPage'
 import SettingsPage from './pages/SettingsPage'
@@ -22,6 +22,7 @@ function loadDefaultWeights() {
 }
 
 function App() {
+  const location = useLocation()
   const [results, setResults] = useState(null)
   const [query, setQuery] = useState(null)
   const [selectedRoute, setSelectedRoute] = useState(null)
@@ -33,6 +34,14 @@ function App() {
     weights: loadDefaultWeights(),
     constraints: { max_walk_min: '', max_transfers: '', max_budget: '' },
   })
+
+  // Reload saved default weights when navigating back to the search page
+  useEffect(() => {
+    if (location.pathname === '/') {
+      const fresh = loadDefaultWeights()
+      setSearchForm(prev => ({ ...prev, weights: fresh }))
+    }
+  }, [location.pathname])
 
   function handleResults(data, q, formState) {
     setResults(data)

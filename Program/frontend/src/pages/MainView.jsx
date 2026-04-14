@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search, X, Loader2, ChevronUp, ChevronDown, RefreshCw, ArrowUpDown, Bus, Car, SlidersHorizontal, Footprints, ArrowLeftRight, Clock } from 'lucide-react';
 import RouteMap from '../components/RouteMap';
@@ -22,6 +22,15 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
   const [weights, setWeights] = useState(initialForm?.weights || { time: 0.25, cost: 0.25, risk: 0.25, comfort: 0.25 });
   const [constraints, setConstraints] = useState(initialForm?.constraints || { max_walk_min: '', max_transfers: '', max_budget: '' });
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Sync weights when parent reloads defaults (e.g. after settings change)
+  const weightsKey = JSON.stringify(initialForm?.weights);
+  useEffect(() => {
+    if (initialForm?.weights) {
+      setWeights(initialForm.weights);
+    }
+  }, [weightsKey]);
+
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
