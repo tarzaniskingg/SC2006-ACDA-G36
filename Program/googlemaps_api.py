@@ -12,25 +12,41 @@ if not GOOGLE_KEY:
 
 gmaps = googlemaps.Client(key=GOOGLE_KEY)
 
+def _fetch_mode(origin, destination, mode, departure_time, alternatives):
+    """Fetch directions for a single mode (called in parallel)."""
+    res = gmaps.directions(
+        origin,
+        destination,
+        mode=mode,
+        departure_time=departure_time,
+        alternatives=alternatives,
+        region="sg",
+    )
+    for route in res:
+        route['requested_mode'] = mode
+    return res
+
+
 def get_all_route_options(origin, destination, modes=None, departure_time=None, alternatives=True):
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     if modes is None:
         modes = ["transit", "driving"]
     if departure_time is None:
         departure_time = datetime.now()
-    all_raw_routes = []
 
-    for m in modes:
-        res = gmaps.directions(
-            origin,
-            destination,
-            mode=m,
-            departure_time=departure_time,
-            alternatives=alternatives,
-            region="sg",
-        )
-        for route in res:
-            route['requested_mode'] = m
-        all_raw_routes.extend(res)
+    if len(modes) == 1:
+        return _fetch_mode(origin, destination, modes[0], departure_time, alternatives)
+
+    # Fetch all modes in parallel
+    all_raw_routes = []
+    with ThreadPoolExecutor(max_workers=len(modes)) as pool:
+        futures = {
+            pool.submit(_fetch_mode, origin, destination, m, departure_time, alternatives): m
+            for m in modes
+        }
+        for fut in as_completed(futures):
+            all_raw_routes.extend(fut.result())
 
     return all_raw_routes
 

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException
 from typing import Optional, List
@@ -32,6 +33,184 @@ from ..core.config import get_settings
 
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Per-route processing helper (runs in thread pool for parallelism)
+# ---------------------------------------------------------------------------
+
+def _process_one_route(r: dict, dt: Optional[datetime]) -> List[dict]:
+    """Process a single Google route into candidate(s). Returns [] on error."""
+    try:
+        legs = r.get("legs", [])
+        if not legs:
+            return []
+        leg = legs[0]
+        duration_s = (leg.get("duration") or {}).get("value", 0)
+        distance_m = (leg.get("distance") or {}).get("value", 0)
+        mode = r.get("requested_mode", "transit")
+
+        # Assess segments (now returns bus frequencies too)
+        segs, bus_freqs = assess_segments_from_google_route(r, departure_time=dt)
+        crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
+
+        # Build rich step-by-step breakdown (pass bus_freqs)
+        route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
+
+        # Compute walking minutes from steps
+        walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
+
+        # Compute realistic time (Feature 5)
+        time_min = round(duration_s / 60.0, 1)
+        realistic_time_min = compute_realistic_time(time_min, route_steps)
+
+        # Extract overview polyline from Google response if available
+        overview_polyline = None
+        try:
+            overview_polyline = r.get("overview_polyline", {}).get("points")
+        except Exception:
+            pass
+
+        # Feature 2: Weather for all routes
+        weather_data = None
+        try:
+            start_loc = leg.get("start_location") or {}
+            end_loc = leg.get("end_location") or {}
+            if start_loc.get("lat") and end_loc.get("lat"):
+                weather_data = get_weather_for_route(
+                    start_loc["lat"], start_loc["lng"],
+                    end_loc["lat"], end_loc["lng"],
+                )
+        except Exception:
+            pass
+
+        # Shared driving data (ERP + parking) computed once, used by both Taxi and Drive
+        erp_data = None
+        parking_data = None
+        if mode == "driving":
+            # Feature 3: ERP
+            if overview_polyline:
+                erp_data = calculate_erp(overview_polyline, departure_time=dt)
+            # Feature 6: Parking
+            try:
+                end_loc = leg.get("end_location") or {}
+                if end_loc.get("lat") and end_loc.get("lng"):
+                    parking_data = find_nearby_carparks(end_loc["lat"], end_loc["lng"])
+            except Exception:
+                pass
+
+        # Parking-based penalties for Drive candidates
+        drive_time_penalty = 0
+        drive_delay_cat = delay_cat
+        drive_delay_num = delay_num
+        if parking_data:
+            p_status = parking_data.get("status", "available")
+            if p_status == "full":
+                drive_time_penalty = 10
+                drive_delay_cat = max(drive_delay_cat, RiskCategory.high,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c.value if hasattr(c, 'value') else c, 2))
+                drive_delay_num = 3
+            elif p_status == "limited":
+                drive_time_penalty = 5
+                drive_delay_cat = max(drive_delay_cat, RiskCategory.medium,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c.value if hasattr(c, 'value') else c, 2))
+                drive_delay_num = max(drive_delay_num, 2)
+            parking_data["time_penalty_min"] = drive_time_penalty
+
+        steps_dump = [s.model_dump() for s in route_steps]
+
+        shared_base = {
+            "path_summary": path_summary or ("Drive" if mode == "driving" else ""),
+            "time_min": time_min,
+            "distance_km": round(distance_m / 1000.0, 2),
+            "walk_min": round(walk_min, 1),
+            "transfers": transfers if mode != "driving" else 0,
+            "steps": steps_dump,
+            "overview_polyline": overview_polyline,
+            "risk_crowding_cat": crowd_cat.value,
+            "risk_crowding_num": crowd_num,
+            "uses_fallback": uses_fallback,
+            "weather": weather_data,
+        }
+
+        results = []
+        if mode == "driving":
+            # Taxi candidate
+            start_loc = leg.get("start_location") or {}
+            taxi_cost = estimate_cost(
+                distance_m, duration_s, "taxi",
+                departure_time=dt,
+                origin_lat=start_loc.get("lat"),
+                origin_lng=start_loc.get("lng"),
+            )
+            if erp_data:
+                taxi_cost["erp"] = erp_data["total"]
+                taxi_cost["erp_gantries"] = erp_data["gantries"]
+                taxi_cost["total"] = round(taxi_cost["total"] + erp_data["total"], 2)
+            results.append({
+                **shared_base,
+                "category": "Taxi",
+                "realistic_time_min": realistic_time_min,
+                "cost_est": taxi_cost["total"],
+                "cost_breakdown": taxi_cost,
+                "risk_delay_cat": delay_cat.value,
+                "risk_delay_num": delay_num,
+                "risk_cat": max(crowd_cat.value, delay_cat.value,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
+                "erp": erp_data,
+                "parking": None,
+            })
+
+            # Drive (own car) candidate
+            car_cost = estimate_cost(distance_m, duration_s, "owncar")
+            if erp_data:
+                car_cost["erp"] = erp_data["total"]
+                car_cost["erp_gantries"] = erp_data["gantries"]
+                car_cost["total"] = round(car_cost["total"] + erp_data["total"], 2)
+
+            drive_realistic = round(realistic_time_min + drive_time_penalty, 1)
+            drive_walk = round(walk_min, 1)
+            if parking_data and parking_data.get("status") == "full":
+                drive_walk = round(walk_min + 5, 1)
+            elif parking_data and parking_data.get("status") == "limited":
+                drive_walk = round(walk_min + 2, 1)
+
+            results.append({
+                **shared_base,
+                "category": "Drive",
+                "realistic_time_min": drive_realistic,
+                "walk_min": drive_walk,
+                "cost_est": car_cost["total"],
+                "cost_breakdown": car_cost,
+                "risk_delay_cat": drive_delay_cat.value,
+                "risk_delay_num": drive_delay_num,
+                "risk_cat": max(crowd_cat.value, drive_delay_cat.value,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
+                "erp": erp_data,
+                "parking": parking_data,
+            })
+        else:
+            # Transit candidate
+            transit_cost = estimate_cost(distance_m, duration_s, "transit")
+            results.append({
+                **shared_base,
+                "category": "Public Transit",
+                "realistic_time_min": realistic_time_min,
+                "cost_est": transit_cost["total"],
+                "cost_breakdown": transit_cost,
+                "risk_delay_cat": delay_cat.value,
+                "risk_delay_num": delay_num,
+                "risk_cat": max(crowd_cat.value, delay_cat.value,
+                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
+                "erp": None,
+                "parking": None,
+            })
+        return results
+    except Exception as exc:
+        import traceback
+        print(f"[WARN] Failed to process route (mode={r.get('requested_mode')}): {exc}")
+        traceback.print_exc()
+        return []
 
 
 @router.get("/routes", response_model=RoutesResponse)
@@ -104,183 +283,16 @@ def get_routes(
             pass  # leave as None; assessment will use current time
 
     raw_routes = get_directions(origin, destination, modes=modes, departure_time=departure_time, alternatives=True)
-    candidates = []
-    for r in raw_routes:
-      try:
-        legs = r.get("legs", [])
-        if not legs:
-            continue
-        leg = legs[0]
-        duration_s = (leg.get("duration") or {}).get("value", 0)
-        distance_m = (leg.get("distance") or {}).get("value", 0)
-        mode = r.get("requested_mode", "transit")
 
-        # Assess segments (now returns bus frequencies too)
-        segs, bus_freqs = assess_segments_from_google_route(r, departure_time=dt)
-        crowd_cat, crowd_num, delay_cat, delay_num, uses_fallback = aggregate_route_risks(segs)
-
-        # Build rich step-by-step breakdown (pass bus_freqs)
-        route_steps, path_summary, transfers = build_route_steps(r, segs, bus_frequencies=bus_freqs)
-
-        # Compute walking minutes from steps
-        walk_min = sum(s.duration_min for s in route_steps if s.mode == "Walk")
-
-        # Compute realistic time (Feature 5)
-        time_min = round(duration_s / 60.0, 1)
-        realistic_time_min = compute_realistic_time(time_min, route_steps)
-
-        # Extract overview polyline from Google response if available
-        overview_polyline = None
-        try:
-            overview_polyline = r.get("overview_polyline", {}).get("points")
-        except Exception:
-            pass
-
-        # Feature 2: Weather for all routes
-        weather_data = None
-        try:
-            start_loc = leg.get("start_location") or {}
-            end_loc = leg.get("end_location") or {}
-            if start_loc.get("lat") and end_loc.get("lat"):
-                weather_data = get_weather_for_route(
-                    start_loc["lat"], start_loc["lng"],
-                    end_loc["lat"], end_loc["lng"],
-                )
-        except Exception:
-            pass
-
-        # Shared driving data (ERP + parking) computed once, used by both Taxi and Drive
-        erp_data = None
-        parking_data = None
-        if mode == "driving":
-            # Feature 3: ERP
-            if overview_polyline:
-                erp_data = calculate_erp(overview_polyline, departure_time=dt)
-            # Feature 6: Parking
-            try:
-                end_loc = leg.get("end_location") or {}
-                if end_loc.get("lat") and end_loc.get("lng"):
-                    parking_data = find_nearby_carparks(end_loc["lat"], end_loc["lng"])
-            except Exception:
-                pass
-
-        # Parking-based penalties for Drive candidates
-        # Time: add realistic parking search time
-        # Risk: parking scarcity increases delay risk
-        drive_time_penalty = 0
-        drive_delay_cat = delay_cat
-        drive_delay_num = delay_num
-        if parking_data:
-            p_status = parking_data.get("status", "available")
-            if p_status == "full":
-                drive_time_penalty = 10       # 10 min circling for parking
-                drive_delay_cat = max(drive_delay_cat, RiskCategory.high,
-                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c.value if hasattr(c, 'value') else c, 2))
-                drive_delay_num = 3
-            elif p_status == "limited":
-                drive_time_penalty = 5        # 5 min finding a spot
-                drive_delay_cat = max(drive_delay_cat, RiskCategory.medium,
-                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c.value if hasattr(c, 'value') else c, 2))
-                drive_delay_num = max(drive_delay_num, 2)
-            # Annotate the parking data with the penalty for frontend display
-            parking_data["time_penalty_min"] = drive_time_penalty
-
-        steps_dump = [s.model_dump() for s in route_steps]
-
-        # Shared fields for all candidate types from this Google route
-        shared_base = {
-            "path_summary": path_summary or ("Drive" if mode == "driving" else ""),
-            "time_min": time_min,
-            "distance_km": round(distance_m / 1000.0, 2),
-            "walk_min": round(walk_min, 1),
-            "transfers": transfers if mode != "driving" else 0,
-            "steps": steps_dump,
-            "overview_polyline": overview_polyline,
-            "risk_crowding_cat": crowd_cat.value,
-            "risk_crowding_num": crowd_num,
-            "uses_fallback": uses_fallback,
-            "weather": weather_data,
-        }
-
-        if mode == "driving":
-            # --- Taxi candidate (no parking penalty — taxi drops you off) ---
-            start_loc = leg.get("start_location") or {}
-            taxi_cost = estimate_cost(
-                distance_m, duration_s, "taxi",
-                departure_time=dt,
-                origin_lat=start_loc.get("lat"),
-                origin_lng=start_loc.get("lng"),
-            )
-            if erp_data:
-                taxi_cost["erp"] = erp_data["total"]
-                taxi_cost["erp_gantries"] = erp_data["gantries"]
-                taxi_cost["total"] = round(taxi_cost["total"] + erp_data["total"], 2)
-            candidates.append({
-                **shared_base,
-                "category": "Taxi",
-                "realistic_time_min": realistic_time_min,
-                "cost_est": taxi_cost["total"],
-                "cost_breakdown": taxi_cost,
-                "risk_delay_cat": delay_cat.value,
-                "risk_delay_num": delay_num,
-                "risk_cat": max(crowd_cat.value, delay_cat.value,
-                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
-                "erp": erp_data,
-                "parking": None,
-            })
-
-            # --- Own car (Drive) candidate — parking penalties on time, risk, comfort ---
-            car_cost = estimate_cost(distance_m, duration_s, "owncar")
-            if erp_data:
-                car_cost["erp"] = erp_data["total"]
-                car_cost["erp_gantries"] = erp_data["gantries"]
-                car_cost["total"] = round(car_cost["total"] + erp_data["total"], 2)
-
-            # Time: add parking search penalty
-            drive_realistic = round(realistic_time_min + drive_time_penalty, 1)
-
-            # Comfort: inflate walk_min when parking is scarce (you walk further from carpark)
-            drive_walk = round(walk_min, 1)
-            if parking_data and parking_data.get("status") == "full":
-                drive_walk = round(walk_min + 5, 1)
-            elif parking_data and parking_data.get("status") == "limited":
-                drive_walk = round(walk_min + 2, 1)
-
-            candidates.append({
-                **shared_base,
-                "category": "Drive",
-                "realistic_time_min": drive_realistic,
-                "walk_min": drive_walk,
-                "cost_est": car_cost["total"],
-                "cost_breakdown": car_cost,
-                "risk_delay_cat": drive_delay_cat.value,
-                "risk_delay_num": drive_delay_num,
-                "risk_cat": max(crowd_cat.value, drive_delay_cat.value,
-                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
-                "erp": erp_data,
-                "parking": parking_data,
-            })
-        else:
-            # --- Transit candidate ---
-            transit_cost = estimate_cost(distance_m, duration_s, "transit")
-            candidates.append({
-                **shared_base,
-                "category": "Public Transit",
-                "realistic_time_min": realistic_time_min,
-                "cost_est": transit_cost["total"],
-                "cost_breakdown": transit_cost,
-                "risk_delay_cat": delay_cat.value,
-                "risk_delay_num": delay_num,
-                "risk_cat": max(crowd_cat.value, delay_cat.value,
-                    key=lambda c: {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}.get(c, 2)),
-                "erp": None,
-                "parking": None,
-            })
-      except Exception as exc:
-        import traceback
-        print(f"[WARN] Failed to process route (mode={r.get('requested_mode')}): {exc}")
-        traceback.print_exc()
-        continue
+    # Process all routes in parallel — each route's assessment, weather,
+    # ERP, and parking calls are independent of the others.
+    with ThreadPoolExecutor(max_workers=min(len(raw_routes), 8) or 1) as pool:
+        futures = [pool.submit(_process_one_route, r, dt) for r in raw_routes]
+        candidates = []
+        for fut in as_completed(futures):
+            result = fut.result()
+            if result:
+                candidates.extend(result)
 
     # Deduplicate routes that use the same sequence of modes + stops
     # Include category so Taxi and Drive (same route) are kept separate
@@ -633,17 +645,25 @@ def compare_departure_times(
         modes = ["transit", "driving"]
 
     groups = _build_compare_slots()
-    slots: List[CompareSlot] = []
 
+    # Build all (label, datetime) pairs, then run them in parallel
+    slot_inputs = []
     for group in groups:
         for time_label, slot_dt in group["times"]:
-            top = _run_routes_for_slot(origin, destination, slot_dt, modes, weights,
-                                       filter_category=category)
-            best_score = top[0]["score"] if top else None
             display_label = f"{group['label']}: {time_label}"
-            slots.append(CompareSlot(time=display_label, routes=top, best_score=best_score))
+            slot_inputs.append((display_label, slot_dt))
 
-    return CompareResponse(origin=origin, destination=destination, category=category, slots=slots)
+    def _run_one_slot(label_and_dt):
+        label, sdt = label_and_dt
+        top = _run_routes_for_slot(origin, destination, sdt, modes, weights,
+                                   filter_category=category)
+        best_score = top[0]["score"] if top else None
+        return CompareSlot(time=label, routes=top, best_score=best_score)
+
+    with ThreadPoolExecutor(max_workers=len(slot_inputs)) as pool:
+        slot_results = list(pool.map(_run_one_slot, slot_inputs))
+
+    return CompareResponse(origin=origin, destination=destination, category=category, slots=slot_results)
 
 
 # ---------------------------------------------------------------------------
