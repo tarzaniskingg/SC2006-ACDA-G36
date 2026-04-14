@@ -258,33 +258,46 @@ def _time_based_crowding(query_time: Optional[datetime] = None) -> str:
 def _mrt_crowding_for_station(station_name: str, query_time: Optional[datetime] = None) -> Tuple[RiskIndicator, Dict]:
     lookup = _lookup_station(station_name)
     if not lookup:
-        # No station found — still use time-based heuristic
         cat = _time_based_crowding(query_time)
         return make_risk(cat, source="heuristic", is_fallback=True), {}
 
     station_code, train_line = lookup
 
-    pcd, ts, was_fallback = lta_client.get_pcd_forecast(train_line=train_line)
+    # --- Try PCDRealTime first (flat list, works reliably) ---
     cat = None
+    pcd_rt, ts, was_fallback = lta_client.get_pcd_realtime(train_line=train_line)
+    try:
+        for item in (pcd_rt.get("value") or []):
+            if item.get("Station") == station_code:
+                level = (item.get("CrowdLevel") or "").strip().lower()
+                if level in ("l", "low"):
+                    cat = "Low"
+                elif level in ("m", "moderate", "medium", "mod"):
+                    cat = "Medium"
+                elif level in ("h", "high"):
+                    cat = "High"
+                break
+    except Exception:
+        pass
 
+    if cat:
+        return make_risk(cat, source="fallback" if was_fallback else "realtime",
+                         is_fallback=was_fallback, timestamp=str(ts) if ts else None), pcd_rt
+
+    # --- Fallback: PCDForecast (30-min intervals for the full day) ---
+    pcd, ts, was_fallback = lta_client.get_pcd_forecast(train_line=train_line)
     try:
         values = pcd.get("value") or []
         if values and values[0] is not None:
             stations_data = values[0].get("Stations") or []
-
-            # Find our station by code
             for st in stations_data:
                 if st.get("Station") == station_code:
                     intervals = st.get("Interval") or []
                     if not intervals:
                         break
-
-                    # Find the interval matching the query time (or current time)
-                    # Compare by time-of-day only (HH:MM) since PCD intervals
-                    # have today's date but query_time might be tomorrow
-                    now = query_time or datetime.now(timezone(timedelta(hours=8)))  # SGT
+                    now = query_time or datetime.now(timezone(timedelta(hours=8)))
                     now_minutes = now.hour * 60 + now.minute
-                    best_interval = intervals[0]  # default to first
+                    best_interval = intervals[0]
                     for iv in intervals:
                         try:
                             iv_start = datetime.fromisoformat(iv["Start"])
@@ -295,7 +308,6 @@ def _mrt_crowding_for_station(station_name: str, query_time: Optional[datetime] 
                                 break
                         except Exception:
                             continue
-
                     level = (best_interval.get("CrowdLevel") or "").strip().lower()
                     if level in ("l", "low"):
                         cat = "Low"
@@ -307,12 +319,13 @@ def _mrt_crowding_for_station(station_name: str, query_time: Optional[datetime] 
     except Exception:
         pass
 
-    # Fallback to time-based heuristic when PCD has no data
-    if cat is None:
-        cat = _time_based_crowding(query_time)
-        return make_risk(cat, source="heuristic", is_fallback=True), pcd
+    if cat:
+        return make_risk(cat, source="fallback" if was_fallback else "realtime",
+                         is_fallback=was_fallback, timestamp=str(ts) if ts else None), pcd
 
-    return make_risk(cat, source="fallback" if was_fallback else "realtime", is_fallback=was_fallback, timestamp=str(ts) if ts else None), pcd
+    # --- Final fallback: time-based heuristic ---
+    cat = _time_based_crowding(query_time)
+    return make_risk(cat, source="heuristic", is_fallback=True), {}
 
 
 # ---------------------------------------------------------------------------

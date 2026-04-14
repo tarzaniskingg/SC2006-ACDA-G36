@@ -56,6 +56,13 @@ def get_pcd_forecast(train_line=None):
     return get("PCDForecast", params=params or None)
 
 
+def get_pcd_realtime(train_line=None):
+    params = {}
+    if train_line:
+        params["TrainLine"] = train_line
+    return get("PCDRealTime", params=params or None)
+
+
 def get_train_service_alerts():
     return get("TrainServiceAlerts")
 

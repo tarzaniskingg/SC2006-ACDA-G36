@@ -34,6 +34,16 @@ def get_pcd_forecast(train_line: str = None) -> Tuple[Dict[str, Any], float, boo
     )
 
 
+def get_pcd_realtime(train_line: str = None) -> Tuple[Dict[str, Any], float, bool]:
+    import lta_api
+    key = f"pcd_realtime:{train_line}" if train_line else "pcd_realtime"
+    return global_cache.get_or_fetch(
+        key,
+        lambda: lta_api.get_pcd_realtime(train_line=train_line),
+        60,  # 60s TTL — real-time data updates every 10 min
+    )
+
+
 def get_train_service_alerts() -> Tuple[Dict[str, Any], float, bool]:
     import lta_api
     return global_cache.get_or_fetch(
