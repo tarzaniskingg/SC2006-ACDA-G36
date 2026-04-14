@@ -62,13 +62,15 @@ def calculate_erp(
 
     dt = departure_time or datetime.now(timezone(timedelta(hours=8)))
 
-    # Check each gantry: if any polyline point is within 80m, consider it passed
+    # Check each gantry: if any polyline point is within 300m, consider it passed.
+    # Google's overview polyline has limited resolution (~100-200m between points)
+    # so a tight threshold misses gantries that the route clearly passes through.
     passed_gantries = []
     for gantry in gantries:
         glat = gantry.get("lat", 0)
         glng = gantry.get("lng", 0)
         for plat, plng in points:
-            if _haversine_m(plat, plng, glat, glng) < 80:
+            if _haversine_m(plat, plng, glat, glng) < 300:
                 rate = _get_rate_for_time(gantry.get("schedule", []), dt)
                 if rate > 0:
                     passed_gantries.append({
