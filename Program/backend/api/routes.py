@@ -719,6 +719,32 @@ def crowding_heatmap(station_name: str, line: Optional[str] = None):
     return CrowdingHeatmapResponse(station=station_name, line=train_line, intervals=intervals_out)
 
 
+@router.get("/debug/pcd")
+def debug_pcd(train_line: str = "EWL"):
+    """Temporary: return raw PCD response for debugging."""
+    from ..services.assessment import _lookup_station
+    pcd, ts, was_fallback = lta_client.get_pcd_forecast(train_line=train_line)
+    # Summarise what we got
+    values = pcd.get("value") or []
+    stations = []
+    if values and values[0] is not None:
+        for st in (values[0].get("Stations") or []):
+            stations.append({
+                "Station": st.get("Station"),
+                "num_intervals": len(st.get("Interval") or []),
+                "sample_intervals": (st.get("Interval") or [])[:3],
+            })
+    return {
+        "train_line": train_line,
+        "was_fallback": was_fallback,
+        "timestamp": ts,
+        "top_level_keys": list(pcd.keys()) if isinstance(pcd, dict) else str(type(pcd)),
+        "num_value_items": len(values),
+        "num_stations": len(stations),
+        "stations_sample": stations[:5],
+    }
+
+
 # --- Minimal Google Maps passthrough (no fallbacks) ---
 @router.get("/gmaps/directions")
 def gmaps_directions(
