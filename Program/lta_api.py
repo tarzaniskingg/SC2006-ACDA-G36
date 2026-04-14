@@ -84,13 +84,6 @@ def get_train_service_alerts():
     return get("TrainServiceAlerts")
 
 
-def get_traffic_speed_bands():
-    raw = _paginated_get("v4/TrafficSpeedBands")
-    # Strip to only fields we use (StartLat, StartLon, SpeedBand) — saves ~70% memory
-    slim = [{"StartLat": r.get("StartLat"), "StartLon": r.get("StartLon"),
-             "SpeedBand": r.get("SpeedBand")} for r in raw]
-    return {"value": slim}
-
 
 def get_bus_stops():
     raw = _paginated_get("BusStops")

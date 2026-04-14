@@ -55,14 +55,6 @@ def get_train_service_alerts() -> Tuple[Dict[str, Any], float, bool]:
 
 
 
-def get_traffic_speed_bands() -> Tuple[Dict[str, Any], float, bool]:
-    import lta_api
-    return global_cache.get_or_fetch(
-        "traffic_speed_bands",
-        lta_api.get_traffic_speed_bands,
-        get_settings().ttl_speed_bands,
-    )
-
 
 def get_bus_stops() -> Tuple[Any, float, bool]:
     import lta_api

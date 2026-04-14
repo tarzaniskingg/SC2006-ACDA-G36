@@ -435,81 +435,27 @@ def _bus_frequency_from_arrival_data(data: Dict, service_no: str) -> Optional[Di
 
 
 # ---------------------------------------------------------------------------
-# Driving delay — uses TrafficSpeedBands
+# Driving delay — derived from Google's duration vs duration_in_traffic
 # ---------------------------------------------------------------------------
 
-def _sample_polyline(points: List[Tuple[float, float]], max_samples: int = 20) -> List[Tuple[float, float]]:
-    """Evenly sample points from a polyline to keep speed band matching fast."""
-    if len(points) <= max_samples:
-        return points
-    step = (len(points) - 1) / (max_samples - 1)
-    return [points[round(i * step)] for i in range(max_samples)]
+def _delay_risk_from_google_traffic(leg: Dict) -> RiskIndicator:
+    """Derive delay risk by comparing Google's baseline duration to
+    traffic-aware duration. No external API call needed."""
+    base = (leg.get("duration") or {}).get("value", 0)
+    traffic = (leg.get("duration_in_traffic") or {}).get("value", 0)
 
+    if not base or not traffic:
+        return make_risk("Unknown", source="none")
 
-def _delay_risk_for_driving_segment(
-    start_lat: Optional[float], start_lng: Optional[float],
-    end_lat: Optional[float], end_lng: Optional[float],
-    overview_polyline: Optional[str] = None,
-) -> RiskIndicator:
-    speed_data, ts, was_fallback = lta_client.get_traffic_speed_bands()
-    cat = "Unknown"
+    ratio = traffic / base if base > 0 else 1.0
+    if ratio >= 1.5:
+        cat = "High"       # 50%+ slower than normal — heavy congestion
+    elif ratio >= 1.2:
+        cat = "Medium"     # 20-50% slower — moderate congestion
+    else:
+        cat = "Low"        # within 20% of normal — flowing
 
-    if start_lat is None or start_lng is None:
-        return make_risk(cat, source="fallback" if was_fallback else "realtime", is_fallback=was_fallback, timestamp=str(ts) if ts else None)
-
-    try:
-        items = speed_data.get("value") or []
-
-        # Build sample points along the route polyline (or fall back to start+end)
-        if overview_polyline:
-            route_points = _sample_polyline(_decode_polyline(overview_polyline))
-        else:
-            route_points = [(start_lat, start_lng)]
-            if end_lat is not None and end_lng is not None:
-                route_points.append((end_lat, end_lng))
-
-        # Build a grid index for fast spatial lookup (~0.005 deg ≈ 500m)
-        CELL = 0.005
-        grid = {}
-        idx = 0
-        for band in items:
-            try:
-                blat = float(band.get("StartLat", 0))
-                blng = float(band.get("StartLon", 0))
-                sb = int(band.get("SpeedBand", 0))
-            except (ValueError, TypeError):
-                continue
-            cell_key = (round(blat / CELL), round(blng / CELL))
-            grid.setdefault(cell_key, []).append((idx, blat, blng, sb))
-            idx += 1
-
-        # Match speed bands within 500m of any sampled route point
-        matched = set()
-        relevant_bands = []
-        for plat, plng in route_points:
-            ck = (round(plat / CELL), round(plng / CELL))
-            for di in (-1, 0, 1):
-                for dj in (-1, 0, 1):
-                    for bidx, blat, blng, sb in grid.get((ck[0] + di, ck[1] + dj), []):
-                        if bidx in matched:
-                            continue
-                        if _haversine_m(plat, plng, blat, blng) < 500:
-                            relevant_bands.append(sb)
-                            matched.add(bidx)
-
-        if relevant_bands:
-            # SpeedBand: 1=0-9km/h, 2=10-19, 3=20-29, 4=30-39, 5+=40+
-            avg_band = sum(relevant_bands) / len(relevant_bands)
-            if avg_band >= 4:
-                cat = "Low"       # 30+ km/h — flowing
-            elif avg_band >= 2:
-                cat = "Medium"    # 10-29 km/h — moderate congestion
-            else:
-                cat = "High"      # 0-9 km/h — heavy congestion
-    except Exception:
-        cat = "Unknown"
-
-    return make_risk(cat, source="fallback" if was_fallback else "realtime", is_fallback=was_fallback, timestamp=str(ts) if ts else None)
+    return make_risk(cat, source="google")
 
 
 # ---------------------------------------------------------------------------
@@ -530,15 +476,10 @@ def assess_segments_from_google_route(route: Dict, departure_time: Optional[date
         leg = (route.get("legs") or [{}])[0]
         start_addr = leg.get("start_address", "")
         end_addr = leg.get("end_address", "")
-        start_loc = leg.get("start_location") or {}
-        end_loc = leg.get("end_location") or {}
         crowd = make_risk("Unknown")
-        polyline = (route.get("overview_polyline") or {}).get("points")
-        delay = _delay_risk_for_driving_segment(
-            start_loc.get("lat"), start_loc.get("lng"),
-            end_loc.get("lat"), end_loc.get("lng"),
-            overview_polyline=polyline,
-        )
+        # Derive delay risk from Google's duration vs duration_in_traffic
+        # (replaces heavy LTA TrafficSpeedBands paginated fetch)
+        delay = _delay_risk_from_google_traffic(leg)
         segments.append(
             SegmentAssessment(mode="DRIVING", from_name=start_addr, to_name=end_addr, crowding=crowd, delay=delay)
         )

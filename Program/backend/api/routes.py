@@ -466,7 +466,6 @@ def refresh_datasets():
         "bus_arrival": cfg.ttl_bus_arrival,
         "pcd_forecast": cfg.ttl_pcd,
         "train_alerts": 60,
-        "speed_bands": cfg.ttl_speed_bands,
         "carpark": cfg.ttl_carpark,
     }
     sources = {
