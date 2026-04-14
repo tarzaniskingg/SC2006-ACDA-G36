@@ -18,20 +18,13 @@ def _set_cache(key: str, value: Any, ttl: int) -> Tuple[Any, float, bool]:
     return item.value, item.retrieved_at, False
 
 
+def _fetch_2hr_forecast():
+    url = "https://api.data.gov.sg/v1/environment/2-hour-weather-forecast"
+    req = urllib.request.Request(url, headers={"User-Agent": "SGTravelBud/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+
+
 def get_2hr_forecast() -> Tuple[Dict[str, Any], float, bool]:
     """Fetch NEA 2-hour weather forecast. Cached for 600s."""
-    key = "nea_2hr_forecast"
-    cached_val, ts, expired = _get_cached(key)
-    if cached_val and not expired:
-        return cached_val, ts, False
-    try:
-        url = "https://api.data.gov.sg/v1/environment/2-hour-weather-forecast"
-        req = urllib.request.Request(url, headers={"User-Agent": "SGTravelBud/1.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-        val, ts, _ = _set_cache(key, data, 600)
-        return val, ts, False
-    except Exception:
-        if cached_val is not None:
-            return cached_val, ts, True
-        return {}, 0.0, True
+    return global_cache.get_or_fetch("nea_2hr_forecast", _fetch_2hr_forecast, 600)

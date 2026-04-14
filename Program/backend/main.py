@@ -47,10 +47,11 @@ def _background_refresh():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Warm cache in a thread so startup isn't blocked
+    # Warm cache BEFORE accepting requests — this ensures the first
+    # user request hits warm data instead of triggering slow paginated fetches
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _warm_cache)
-    # Start background refresh thread
+    await loop.run_in_executor(None, _warm_cache)
+    # Start background refresh thread to keep cache warm
     _refresh_stop.clear()
     t = threading.Thread(target=_background_refresh, daemon=True)
     t.start()
