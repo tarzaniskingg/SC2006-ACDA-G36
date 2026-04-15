@@ -26,6 +26,7 @@ function App() {
   const [results, setResults] = useState(null)
   const [query, setQuery] = useState(null)
   const [selectedRoute, setSelectedRoute] = useState(null)
+  const [showGmaps, setShowGmaps] = useState(false)
 
   const [searchForm, setSearchForm] = useState({
     origin: '',
@@ -71,28 +72,58 @@ function App() {
     return data
   }, [query, searchForm])
 
+  // Google Maps directions URL — opens the real Google Maps frontend
+  const gmapMode = selectedRoute?.category === 'Taxi' || selectedRoute?.category === 'Drive'
+    ? 'driving' : 'transit'
+  const gmapsUrl = query
+    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(query.origin + ', Singapore')}&destination=${encodeURIComponent(query.destination + ', Singapore')}&travelmode=${gmapMode}`
+    : null
+
+  function openGmaps() {
+    if (gmapsUrl) window.open(gmapsUrl, 'gmaps-compare')
+  }
+
   return (
-    <div className="max-w-lg mx-auto h-screen flex flex-col relative overflow-hidden" style={{ background: '#080c18' }}>
-      <div className="flex-1 overflow-y-auto relative">
-        <Routes>
-          <Route path="/" element={
-            <MainView
-              results={results}
-              query={query}
-              selectedRoute={selectedRoute}
-              onSelectRoute={setSelectedRoute}
-              onResults={handleResults}
-              onRefresh={handleRefresh}
-              initialForm={searchForm}
-            />
-          } />
-          <Route path="/scoring" element={
-            <ScoringPage results={results} query={query} />
-          } />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+    <div className="h-screen w-screen overflow-hidden" style={{ background: '#050810' }}>
+      {/* ===== DEMO TOGGLE — fixed outside the app box ===== */}
+      <button
+        onClick={openGmaps}
+        disabled={!gmapsUrl}
+        className={`fixed top-3 right-3 z-50 px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all border-2 border-dashed select-none
+          ${gmapsUrl
+            ? 'border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200'
+            : 'border-slate-600 bg-slate-800/60 text-slate-400 cursor-not-allowed'
+          }`}
+      >
+        {'\u25a1'} Open Google Maps
+        <span className="block text-[9px] text-slate-500 mt-0.5 text-center">for demo only</span>
+      </button>
+
+      {/* ===== APP CONTAINER ===== */}
+      <div className="max-w-lg mx-auto h-full w-full flex flex-col relative overflow-hidden"
+        style={{ background: '#080c18' }}
+      >
+        <div className="flex-1 overflow-y-auto relative">
+          <Routes>
+            <Route path="/" element={
+              <MainView
+                results={results}
+                query={query}
+                selectedRoute={selectedRoute}
+                onSelectRoute={setSelectedRoute}
+                onResults={handleResults}
+                onRefresh={handleRefresh}
+                initialForm={searchForm}
+              />
+            } />
+            <Route path="/scoring" element={
+              <ScoringPage results={results} query={query} />
+            } />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </div>
+        <BottomNav hasResults={!!results?.routes?.length} />
       </div>
-      <BottomNav hasResults={!!results?.routes?.length} />
     </div>
   )
 }

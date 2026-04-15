@@ -324,9 +324,9 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
         </div>
       )}
 
-      {/* Floating compare button — centered bottom, always visible when routes exist */}
-      {routes.length > 0 && selectedRoute && (
-        <div className="fixed bottom-20 left-4 right-4 z-40 flex justify-center pointer-events-none">
+      {/* Floating compare button — only when results sheet is expanded */}
+      {routes.length > 0 && selectedRoute && !searchOpen && sheetState === SHEET_RESULTS && (
+        <div className="absolute bottom-20 left-4 right-4 z-40 flex justify-center pointer-events-none">
           <button onClick={handleCompare} disabled={compareLoading}
             className="pointer-events-auto flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg font-display font-semibold text-[12px] transition-all active:scale-95 bg-amber-500/90 text-slate-900 hover:bg-amber-400"
             style={{ boxShadow: '0 4px 24px rgba(232,152,58,0.35)' }}>
