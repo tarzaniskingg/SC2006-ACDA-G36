@@ -261,9 +261,13 @@ export default function ScoringPage({ results, query }) {
         const seen = new Set();
         for (const route of routes) {
           for (const step of (route.steps || [])) {
-            if (step.mode === 'Train' && step.from_name) {
-              const name = step.from_name;
-              if (!seen.has(name)) { seen.add(name); stationNames.push(name); }
+            if (step.mode === 'Train') {
+              if (step.from_name && !seen.has(step.from_name)) {
+                seen.add(step.from_name); stationNames.push(step.from_name);
+              }
+              if (step.to_name && !seen.has(step.to_name)) {
+                seen.add(step.to_name); stationNames.push(step.to_name);
+              }
             }
           }
         }
