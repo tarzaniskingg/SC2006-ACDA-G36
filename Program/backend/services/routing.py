@@ -1,6 +1,6 @@
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timezone, timedelta
-from .scoring import normalize, composite_score, tie_break_key, explain, compute_risk, compute_comfort
+from .scoring import normalize, composite_score, tie_break_key, _build_explanation, _raw, compute_risk, compute_comfort
 from ..models.schemas import SegmentAssessment, RiskCategory, RouteStep
 
 SGT = timezone(timedelta(hours=8))
@@ -398,12 +398,21 @@ def rank_routes(candidate_routes: List[Dict], weights: Dict[str, float]) -> List
 
 
 def add_explanations(routes: List[Dict], weights: Dict[str, float]) -> None:
+    if not routes:
+        return
     sorted_w = sorted(
         [("time", weights.get("time", 0.0)), ("cost", weights.get("cost", 0.0)),
          ("risk", weights.get("risk", 0.0)), ("comfort", weights.get("comfort", 0.0))],
         key=lambda x: x[1],
         reverse=True,
     )
-    top_key = sorted_w[0][0]
-    for r in routes:
-        r["explanation"] = explain(r, top_key)
+    factor_order = [k for k, _ in sorted_w]
+
+    # Which factors actually differ across routes?
+    all_same = {}
+    for key in factor_order:
+        vals = set(_raw(r, key) for r in routes)
+        all_same[key] = len(vals) <= 1 and len(routes) > 1
+
+    for i, r in enumerate(routes):
+        r["explanation"] = _build_explanation(r, i, routes, factor_order, all_same)
