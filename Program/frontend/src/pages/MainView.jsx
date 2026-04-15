@@ -307,7 +307,7 @@ export default function MainView({ results, query, selectedRoute, onSelectRoute,
 
           {/* Scrollable card list */}
           {sheetState >= SHEET_RESULTS && (
-            <div className="overflow-y-auto overscroll-contain px-4 pb-4 space-y-2.5"
+            <div className="overflow-y-auto overscroll-contain px-4 pb-16 space-y-2.5"
               style={{ minHeight: 0 }}>
               {routes.map((route, i) => (
                 <RouteCard
