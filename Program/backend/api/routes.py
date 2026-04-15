@@ -305,6 +305,18 @@ def get_routes(
 
     raw_routes = get_directions(origin, destination, modes=modes, departure_time=departure_time, alternatives=True)
 
+    # Extract origin/destination coordinates from the first raw route
+    origin_latlng = None
+    dest_latlng = None
+    if raw_routes:
+        first_leg = (raw_routes[0].get("legs") or [{}])[0]
+        sl = first_leg.get("start_location") or {}
+        el = first_leg.get("end_location") or {}
+        if sl.get("lat"):
+            origin_latlng = [sl["lat"], sl["lng"]]
+        if el.get("lat"):
+            dest_latlng = [el["lat"], el["lng"]]
+
     # Process all routes in parallel — each route's assessment, weather,
     # ERP, and parking calls are independent of the others.
     with ThreadPoolExecutor(max_workers=min(len(raw_routes), 8) or 1) as pool:
@@ -350,7 +362,7 @@ def get_routes(
         filtered.append(c)
 
     if not filtered:
-        return RoutesResponse(trip=trip, routes=[], message="No routes found or API unavailable")
+        return RoutesResponse(trip=trip, routes=[], origin_latlng=origin_latlng, dest_latlng=dest_latlng, message="No routes found or API unavailable")
 
     ranked = rank_routes(filtered, weights)
     add_explanations(ranked, weights)
@@ -374,7 +386,7 @@ def get_routes(
     # Re-sort by score
     top.sort(key=lambda r: r.get("score", 999))
 
-    return RoutesResponse(trip=trip, routes=top)
+    return RoutesResponse(trip=trip, routes=top, origin_latlng=origin_latlng, dest_latlng=dest_latlng)
 
 
 @router.get("/assessment", response_model=AssessmentResponse)

@@ -79,8 +79,10 @@ function App() {
   const gmapsUrl = query
     ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(query.origin + ', Singapore')}&destination=${encodeURIComponent(query.destination + ', Singapore')}&travelmode=${gmapMode}`
     : null
-  const citymapperUrl = query
-    ? `https://citymapper.com/directions?startname=${encodeURIComponent(query.origin + ', Singapore')}&endname=${encodeURIComponent(query.destination + ', Singapore')}`
+  const originCoords = results?.origin_latlng
+  const destCoords = results?.dest_latlng
+  const citymapperUrl = query && originCoords && destCoords
+    ? `https://citymapper.com/directions?startcoord=${originCoords[0]},${originCoords[1]}&startname=${encodeURIComponent(query.origin)}&endcoord=${destCoords[0]},${destCoords[1]}&endname=${encodeURIComponent(query.destination)}`
     : null
 
   // Triple-tap the dark background outside the phone to reveal demo buttons

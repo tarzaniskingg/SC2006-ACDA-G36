@@ -118,6 +118,8 @@ class AssessmentInput(BaseModel):
 class RoutesResponse(BaseModel):
     trip: TripRequest
     routes: List[RouteOption]
+    origin_latlng: Optional[List[float]] = None   # [lat, lng]
+    dest_latlng: Optional[List[float]] = None      # [lat, lng]
     message: Optional[str] = None
 
 
