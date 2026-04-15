@@ -199,9 +199,18 @@ def _process_one_route(r: dict, dt: Optional[datetime]) -> List[dict]:
                 "parking": parking_data,
             })
         else:
-            # Transit candidate — prefer Google's fare (real TransitLink pricing
-            # with early-bird/off-peak discounts), fall back to distance estimate
-            if google_fare and google_fare.get("value"):
+            # Transit candidate — walk-only routes are free
+            is_walk_only = all(s.mode == "Walk" for s in route_steps)
+            if is_walk_only:
+                transit_cost = {
+                    "total": 0.00,
+                    "base_fare": 0.00,
+                    "distance_km": round(distance_m / 1000.0, 2),
+                    "mode": "walk",
+                }
+            elif google_fare and google_fare.get("value"):
+                # Prefer Google's fare (real TransitLink pricing
+                # with early-bird/off-peak discounts)
                 transit_cost = {
                     "total": round(google_fare["value"], 2),
                     "google_fare": round(google_fare["value"], 2),
