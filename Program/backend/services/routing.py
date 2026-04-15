@@ -366,7 +366,8 @@ def rank_routes(candidate_routes: List[Dict], weights: Dict[str, float]) -> List
     # Compute combined risk and comfort raw values
     for r in candidate_routes:
         r["risk_num"] = compute_risk(r.get("risk_crowding_num", 2), r.get("risk_delay_num", 2))
-        r["comfort_num"] = compute_comfort(r.get("walk_min", 0.0), r.get("transfers", 0))
+        rain = bool(r.get("weather") and r["weather"].get("rain"))
+        r["comfort_num"] = compute_comfort(r.get("walk_min", 0.0), r.get("transfers", 0), rain=rain)
 
     times = [r.get("realistic_time_min", r.get("time_min", 0.0)) for r in candidate_routes]
     costs = [r.get("cost_est", 0.0) for r in candidate_routes]
