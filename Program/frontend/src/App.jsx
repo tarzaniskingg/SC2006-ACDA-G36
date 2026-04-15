@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainView from './pages/MainView'
 import ScoringPage from './pages/ScoringPage'
@@ -26,7 +26,8 @@ function App() {
   const [results, setResults] = useState(null)
   const [query, setQuery] = useState(null)
   const [selectedRoute, setSelectedRoute] = useState(null)
-  const [showGmaps, setShowGmaps] = useState(false)
+  const [showDemoPanel, setShowDemoPanel] = useState(false)
+  const tapTimesRef = useRef([])
 
   const [searchForm, setSearchForm] = useState({
     origin: '',
@@ -72,32 +73,52 @@ function App() {
     return data
   }, [query, searchForm])
 
-  // Google Maps directions URL — opens the real Google Maps frontend
+  // Demo comparison URLs — opens real Google Maps / CityMapper frontends
   const gmapMode = selectedRoute?.category === 'Taxi' || selectedRoute?.category === 'Drive'
     ? 'driving' : 'transit'
   const gmapsUrl = query
     ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(query.origin + ', Singapore')}&destination=${encodeURIComponent(query.destination + ', Singapore')}&travelmode=${gmapMode}`
     : null
+  const citymapperUrl = query
+    ? `https://citymapper.com/directions?startname=${encodeURIComponent(query.origin + ', Singapore')}&endname=${encodeURIComponent(query.destination + ', Singapore')}`
+    : null
 
-  function openGmaps() {
-    if (gmapsUrl) window.open(gmapsUrl, 'gmaps-compare')
+  // Triple-tap the dark background outside the phone to reveal demo buttons
+  function handleBackgroundTap(e) {
+    if (e.target !== e.currentTarget) return
+    const now = Date.now()
+    tapTimesRef.current = [...tapTimesRef.current.slice(-2), now]
+    if (tapTimesRef.current.length === 3 && now - tapTimesRef.current[0] < 1500) {
+      setShowDemoPanel(p => !p)
+      tapTimesRef.current = []
+    }
   }
 
+  const demoBtnBase = 'w-full px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all border-2 border-dashed select-none text-left'
+  const demoBtnActive = 'border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200'
+  const demoBtnDisabled = 'border-slate-600 bg-slate-800/60 text-slate-400 cursor-not-allowed'
+
   return (
-    <div className="h-screen w-screen overflow-hidden" style={{ background: '#050810' }}>
-      {/* ===== DEMO TOGGLE — fixed outside the app box ===== */}
-      <button
-        onClick={openGmaps}
-        disabled={!gmapsUrl}
-        className={`fixed top-3 right-3 z-50 px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all border-2 border-dashed select-none
-          ${gmapsUrl
-            ? 'border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200'
-            : 'border-slate-600 bg-slate-800/60 text-slate-400 cursor-not-allowed'
-          }`}
-      >
-        {'\u25a1'} Open Google Maps
-        <span className="block text-[9px] text-slate-500 mt-0.5 text-center">for demo only</span>
-      </button>
+    <div className="h-screen w-screen overflow-hidden" style={{ background: '#050810' }}
+      onClick={handleBackgroundTap}>
+
+      {/* ===== DEMO BUTTONS — revealed by triple-tapping background ===== */}
+      {showDemoPanel && (
+        <div className="fixed top-3 right-3 z-50 flex flex-col gap-2 anim-fade-in">
+          <button onClick={() => gmapsUrl && window.open(gmapsUrl, 'gmaps-compare')}
+            disabled={!gmapsUrl}
+            className={`${demoBtnBase} ${gmapsUrl ? demoBtnActive : demoBtnDisabled}`}>
+            {'\u25a1'} Open Google Maps
+            <span className="block text-[9px] text-slate-500 mt-0.5">for demo only</span>
+          </button>
+          <button onClick={() => citymapperUrl && window.open(citymapperUrl, 'citymapper-compare')}
+            disabled={!citymapperUrl}
+            className={`${demoBtnBase} ${citymapperUrl ? demoBtnActive : demoBtnDisabled}`}>
+            {'\u25a1'} Open CityMapper
+            <span className="block text-[9px] text-slate-500 mt-0.5">for demo only</span>
+          </button>
+        </div>
+      )}
 
       {/* ===== APP CONTAINER ===== */}
       <div className="max-w-lg mx-auto h-full w-full flex flex-col relative overflow-hidden"
