@@ -32,9 +32,11 @@ function RouteScoreCard({ route, rank, weights, t }) {
     'bg-white/5 text-slate-400',
   ];
 
+  // Normalize weights to sum to 1.0 (matching backend composite_score logic)
+  const rawTotal = DIMENSIONS.reduce((s, d) => s + (weights?.[d.key] ?? 0.25), 0) || 1;
   const contributions = DIMENSIONS.map(d => {
     const norm = route[d.normKey] ?? 0;
-    const w = weights?.[d.key] ?? 0.25;
+    const w = (weights?.[d.key] ?? 0.25) / rawTotal;
     return { ...d, label: t(d.labelKey), norm, weight: w, contribution: norm * w };
   });
   const totalScore = route.score ?? contributions.reduce((s, c) => s + c.contribution, 0);
@@ -168,17 +170,21 @@ export default function ScoringPage({ results, query }) {
       <div className="glass rounded-2xl p-4 animate-fade-up delay-2">
         <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3 font-display">{t('score.activeWeights')}</h3>
         <div className="grid grid-cols-4 gap-2">
-          {DIMENSIONS.map(d => {
-            const Icon = d.icon;
-            const w = weights[d.key] ?? 0.25;
-            return (
-              <div key={d.key} className="text-center">
-                <Icon size={17} className="mx-auto mb-1 text-slate-400" />
-                <div className="text-sm font-bold text-white font-display">{w.toFixed(2)}</div>
-                <div className="text-[10px] text-slate-500 font-display">{t(d.labelKey)}</div>
-              </div>
-            );
-          })}
+          {(() => {
+            const rawSum = DIMENSIONS.reduce((s, d) => s + (weights[d.key] ?? 0.25), 0) || 1;
+            return DIMENSIONS.map(d => {
+              const Icon = d.icon;
+              const raw = weights[d.key] ?? 0.25;
+              const norm = raw / rawSum;
+              return (
+                <div key={d.key} className="text-center">
+                  <Icon size={17} className="mx-auto mb-1 text-slate-400" />
+                  <div className="text-sm font-bold text-white font-display">{norm.toFixed(2)}</div>
+                  <div className="text-[10px] text-slate-500 font-display">{t(d.labelKey)}</div>
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
 
