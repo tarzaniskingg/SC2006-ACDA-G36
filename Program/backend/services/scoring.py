@@ -32,14 +32,19 @@ def compute_comfort(walk_min: float, transfers: int, rain: bool = False) -> floa
     """Combine walking time and transfers into a single comfort score.
     Higher = less comfortable. Both are normalized to roughly 0-10 range
     before combining so neither dominates.
-    When rain is forecasted, walking feels significantly worse (2.5x multiplier).
+    When rain is forecasted, a flat penalty scaled by walking time is added
+    so that even heavy-walk routes (which already hit the cap) are penalized.
     """
-    effective_walk = walk_min * 2.5 if rain else walk_min
     # Walk: cap at 30 min for normalization (above 30 is equally bad)
-    walk_score = min(effective_walk, 30.0) / 3.0  # 0-10 range
+    walk_score = min(walk_min, 30.0) / 3.0  # 0-10 range
     # Transfers: 0-5 range mapped to 0-10
     transfer_score = min(transfers, 5) * 2.0  # 0-10 range
-    return 0.6 * walk_score + 0.4 * transfer_score
+    base = 0.6 * walk_score + 0.4 * transfer_score
+    if rain and walk_min > 0:
+        # Rain penalty: +3 per 10 min of walking (uncapped, proportional to exposure)
+        rain_penalty = (walk_min / 10.0) * 3.0
+        return base + rain_penalty
+    return base
 
 
 def composite_score(normalized: Dict[str, float], weights: Dict[str, float]) -> float:
